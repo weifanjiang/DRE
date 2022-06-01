@@ -1,3 +1,6 @@
 [submodule "philly-traces"]
 	path = philly-traces
 	url = git@github.com:msr-fiddle/philly-traces.git
+[submodule "CSSPy"]
+	path = CSSPy
+	url = git@github.com:weifanjiang/CSSPy.git
