@@ -5,6 +5,7 @@ Weifan Jiang, weifanjiang@g.harvard.edu
 
 import apricot
 import numpy as np
+import pandas as pd
 from CSSPy.volume_sampler import k_Volume_Sampling_Sampler
 from CSSPy.doublephase_sampler import double_Phase_Sampler
 from CSSPy.largest_leveragescores_sampler import largest_leveragescores_Sampler
@@ -24,7 +25,6 @@ def submodular_function_optimization(X, Y, **kwargs):
     does not require labeled dataset
 
     Required params:
-    - dir: row or col
     - model: fls or fbs
     """
     if kwargs["dir"] == 'col':
@@ -49,7 +49,6 @@ def subset_selection_problem(X, Y, **kwargs):
     does not require labeled dataset
 
     Required params:
-    - dir: row or col
     - sampler: volume, doublePhase or leverage
     """
     if kwargs["dir"] == 'row':
@@ -82,7 +81,7 @@ def active_learning(X, Y, **kwargs):
     """
     Active learning to sample rows in a batched fashion
     requires labeled dataset
-    only for row sampling
+    assume to be row sampling
 
     Required params:
     - model: RF, MLP, KNN (5 neighbors), KNNX (X = number of neighbors)
@@ -140,10 +139,11 @@ def active_learning(X, Y, **kwargs):
     return selected
 
 
-def sampling_based_reductions(X, Y, method, **kwargs):
+def sampling_based_reduction(X, Y, method, **kwargs):
     """
-    Sampling based data reduction.
+    Sampling based data reduction applied to a list.
     Pass Y = None for sampling strategies that do not require labeled dataset
+    Returns a list of integers for selected indices of rows/columns
 
     method:
     - smf: submodular function optimization
@@ -151,6 +151,7 @@ def sampling_based_reductions(X, Y, method, **kwargs):
     - al: active learning
 
     kwargs should include:
+    - dir: direction of sampling (row or col)
     - keepFrac: fraction of rows/columns that the reduced data should keep
     - other argument that the specific sampling strategy requires
     """
@@ -161,3 +162,89 @@ def sampling_based_reductions(X, Y, method, **kwargs):
     }
 
     return mapper[method](X, Y, **kwargs)
+
+
+def sampling_based_reduction_df(input_df, granularities, metrics, method, Y, **kwargs):
+    """
+    Sampling based data reduction applied to each subgroup within the Dataframe.
+    Pass Y = None for sampling strategies that do not require labeled dataset
+    Return a dataframe which nan values indicates sampled data
+    """
+    if Y is not None:
+        input_df["Y"] = Y
+    metadatas = [x for x in input_df.columns if x not in metrics]
+    grb = input_df.groupby(granularities)
+    processed = list()
+
+    for _, sub_df in grb:
+        vals = sub_df[metrics].values
+        if Y is None:
+            selected_idx = sampling_based_reduction(vals, None, method, **kwargs)
+        else:
+            selected_idx = sampling_based_reduction(vals, sub_df["Y"].values, method, **kwargs)
+        if kwargs['dir'] == 'row':
+            new_df = sub_df.iloc[selected_idx, :]
+        else:  # col
+            new_df = sub_df[metadatas + [metrics[i] for i in selected_idx]]
+        processed.append(new_df)
+
+    output_df = pd.concat(processed, axis=0, ignore_index=True)
+    output_df = output_df[metadatas + [x for x in output_df.columns if x not in metadatas]]
+
+    if Y is not None:
+        output_Y = output_df["Y"].values
+        output_df.drop(columns="Y")
+    else:
+        output_Y = None
+
+    return output_df, output_Y
+
+
+def aggregation_based_reduction_df(input_df, agg_criterias, metrics, agg_func_options):
+    """
+    Aggregation based data reduction applied to dataframe.
+    Columns not in agg_criterias or metrics will be dropped.
+    Returns an aggregated dataframe.
+
+    agg_func_options:
+    - 1: mean, std, 0, 50, 100 percentiles
+    - 2: mean, std, 0, 25, 50, 75, 100 percentiles
+    - 3: mean, std, 0, 1, 10, 25, 50, 75, 90, 99, 1
+    """
+
+    grb = input_df.groupby(agg_criterias)
+    output = list()
+
+    percentiles_map = {
+        1: [0, 0.5, 1],
+        2: [0, 0.25, 0.5, 0.75, 1],
+        3: [0, 0.01, 0.1, 0.25, 0.5, 0.75, 0.9, 0.99, 1]
+    }
+    percentiles = percentiles_map[agg_func_options]
+
+    for gname, gdf in  grb:
+        curr_data = dict()
+
+        if type(agg_criterias) == str:
+            curr_data[agg_criterias] = gname
+        else:  # multiple aggregation criterias
+            for cri, nam in zip(agg_criterias, gname):
+                curr_data[cri] = nam
+
+        sub_df = gdf[metrics]
+        mean_df = sub_df.mean()
+        std_df = sub_df.std()
+        pctl_df = sub_df.quantile(percentiles)
+
+        for metric in metrics:
+            curr_data["{}_mean".format(metric)] = mean_df.get(metric, None)
+            curr_data["{}_std".format(metric)] = std_df.get(metric, None)
+
+            for pctl in percentiles:
+                curr_data["{}_{}pctl".format(metric, int(pctl * 100))] = pctl_df[metric].get(pctl, None)
+        
+        output.append(curr_data)
+    
+    output_df = pd.DataFrame(output)
+    reorder_columns = agg_criterias + sorted([x for x in output_df.columns if x not in agg_criterias])
+    return output_df[reorder_columns]
