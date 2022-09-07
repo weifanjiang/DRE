@@ -6,13 +6,13 @@ Weifan Jiang, weifanjiang@g.harvard.edu
 import apricot
 import numpy as np
 import pandas as pd
-from CSSPy.dataset_tools import calculate_right_eigenvectors_k_svd
 from CSSPy.volume_sampler import k_Volume_Sampling_Sampler
 from CSSPy.doublephase_sampler import double_Phase_Sampler
 from CSSPy.largest_leveragescores_sampler import largest_leveragescores_Sampler
+from CSSPy.dataset_tools import calculate_right_eigenvectors_k_svd
 from modAL.models import ActiveLearner
 from modAL.batch import uncertainty_batch_sampling
-from modAL.uncertainty import margin_sampling, entropy_sampling
+from modAL.uncertainty import margin_sampling, entropy_sampling, uncertainty_sampling
 from modAL.expected_error import expected_error_reduction
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.neural_network import MLPClassifier
@@ -20,16 +20,92 @@ from sklearn.neighbors import KNeighborsClassifier
 
 
 def submodular_function_optimization(X, Y, **kwargs):
+    """
+    Submodular function optimization for row/column sampling
+    does not require labeled dataset
+
+    Required params:
+    - model: fls or fbs
+    """
     if kwargs["dir"] == 'col':
         X = X.transpose()
     tokeep = int(X.shape[0] * kwargs['keepFrac'])
-    if kwargs['search'] == 'fls':
+    if kwargs['model'] == 'fls':
         clf = apricot.FacilityLocationSelection(tokeep).fit(X)
-    else:  # fbs
+    elif kwargs['model'] == 'fbs':
         clf = apricot.FeatureBasedSelection(tokeep).fit(X)
-    selected = [int(x) for x in clf.ranking]
-    return selected[0:min(len(selected), tokeep)]
+    else:
+        return None
+    toret = clf.ranking
+    selected = [int(i) for i in toret]
+    if len(selected) > tokeep:
+        selected = selected[:tokeep]
+    return selected
 
+
+def subset_selection_problem(X, Y, **kwargs):
+    """
+    Subset selection to optimize for the span of selected rows/columns
+    does not require labeled dataset
+
+    Required params:
+    - sampler: volume, doublePhase or leverage
+    """
+    if kwargs["dir"] == 'row':
+        X = X.transpose()
+    tokeep = int(X.shape[0] * kwargs['keepFrac'])
+    tokeep = min(tokeep, X.shape[0] - 1)
+    tokeep = min(tokeep, X.shape[1] - 1)
+    d = np.shape(X)[1]
+    N = np.shape(X)[0] - 1
+    _, D, V = np.linalg.svd(X)
+    V_k = calculate_right_eigenvectors_k_svd(X, tokeep)
+
+    if kwargs['sampler'] == 'volume':
+        NAL = k_Volume_Sampling_Sampler(X, tokeep, D, V, d)
+        A_S = NAL.MultiRounds()
+    elif kwargs['sampler'] == 'doublePhase':
+        NAL = double_Phase_Sampler(X, tokeep, V_k, d, 10*tokeep)
+        A_S = NAL.DoublePhase()
+    elif kwargs['sampler'] == 'leverage':
+        NAL = largest_leveragescores_Sampler(X, tokeep, V, d)
+        A_S = NAL.MultiRounds()
+    
+    selected = [int(x) for x in NAL.selected]
+    if len(selected) > tokeep:
+        selected = selected[:tokeep]
+    return selected
+
+
+def active_learning(X, Y, **kwargs):
+    """
+    Active learning to sample rows in a batched fashion
+    requires labeled dataset
+    assume to be row sampling
+
+    Required params:
+    - model: RF, MLP, KNN (5 neighbors), KNNX (X = number of neighbors)
+    - initFrac: fraction of target samples randomly selected to initialize active learning (default 0.1)
+    - sampling: margin, entropy, uncertain (default), uncertainBatch, expected
+    - nQueries: number of iterations of active learning (default 10)
+    """
+    selected = list()
+    tokeep = int(X.shape[0] * kwargs["keepFrac"])
+    model = kwargs["model"]
+    if model == "RF":
+        d2d = RandomForestClassifier()
+    elif model == "MLP":
+        d2d = MLPClassifier()
+    elif model.startswith("KNN"):
+        if model == "KNN":
+            nn = 5
+        else:
+            nn = int(model.replace("KNN", ""))
+        d2d = KNeighborsClassifier(n_neighbors=nn)
+    
+    n_initial = max(int(kwargs.get("initFrac", 0.1) * tokeep), 1)
+    initial_idx = np.random.choice(range(X.shape[0]), size=n_initial, replace=False)
+    selected.extend(initial_idx.tolist())
 
 def subset_selection_problem(X, Y, **kwargs):
     tokeep = int(min(X.shape[0], X.shape[1]) * kwargs["keepFrac"])
