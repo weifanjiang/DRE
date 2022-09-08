@@ -1,0 +1,23 @@
+name,machine_type,trace,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1,0,1,2,3
+m38,cpu,utilization,"time                 machine_id
+2017-11-05 01:53:00  m38           50.533333333
+                     m38                   83.5
+Name: cpu_util, dtype: object","time                 machine_id
+2017-11-05 01:54:00  m38           79.863333333
+                     m38                 48.955
+Name: cpu_util, dtype: object","time                 machine_id
+2017-11-05 01:55:00  m38           52.966666667
+                     m38                   39.4
+Name: cpu_util, dtype: object","time                 machine_id
+2017-11-05 01:56:00  m38                 43.525
+                     m38           76.316666667
+Name: cpu_util, dtype: object","time                 machine_id
+2017-11-05 01:57:00  m38           76.4
+                     m38           83.7
+Name: cpu_util, dtype: object","time                 machine_id
+2017-11-05 01:58:00  m38                  79.65
+                     m38           48.093333333
+Name: cpu_util, dtype: object","time                 machine_id
+2017-11-05 01:59:00  m38                   39.6
+                     m38           40.433333333
+Name: cpu_util, dtype: object",75.38,83.76,48.093333333,36.026666667,75.945,72.058333333,44.08
