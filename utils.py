@@ -1,4 +1,3 @@
-from cProfile import label
 import pandas as pd
 import json
 import os
@@ -11,9 +10,17 @@ scout_data_dir = "data/scout"
 scout_total_size = 312049 * 230
 
 scout_azure_dbfs_dir = "/dbfs/user/weifan/"
-scout_azure_device_health_reports = os.path.join(
-    scout_azure_dbfs_dir, "device_health_data"
-)
+scout_device_health_dir = "device_health_data"
+
+scout_azure_device_health_dir = os.path.join(scout_azure_dbfs_dir, scout_device_health_dir)
+scout_dummy_device_health_dir = os.path.join(scout_data_dir, scout_device_health_dir)
+
+scout_entity_types = ['cluster_swicth', 'switch', 'tor_switch', ]
+scout_tiers = {
+    "cluster_switch": (0, 1),
+    "switch": (0, 1, 2, 3),
+    "tor_switch": (0, )
+}
 
 philly_label_dict = {
     "Pass": 0,
@@ -71,4 +78,21 @@ def get_scout_all_next_hops(curr_reduction, all_reductions):
     next_length = get_scout_hop_count(curr_reduction) + 1
     candidates = [x for x in all_reductions if get_scout_all_next_hops(x) == next_length]
     return [x for x in candidates if scout_is_prefix(curr_reduction, x)]
+
+
+def load_device_health_report_columns():
+    with open(os.path.join(scout_data_dir, 'device_healthy_data_cols.json')) as fin:
+        cols = json.load(fin)
+    return cols
+
+
+def load_raw_incident_device_health_reports(on_azure=True):
+    pass
+
+
+def extract_tier_from_entity_name(entity_name, dummy=False):
+    if dummy:
+        return None
     
+    else:
+        return None
