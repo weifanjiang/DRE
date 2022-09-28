@@ -6,6 +6,14 @@ from sklearn.model_selection import train_test_split
 
 
 philly_data_dir = "data/philly"
+scout_data_dir = "data/scout"
+
+scout_total_size = 312049 * 230
+
+scout_azure_dbfs_dir = "/dbfs/user/weifan/"
+scout_azure_device_health_reports = os.path.join(
+    scout_azure_dbfs_dir, "device_health_data"
+)
 
 philly_label_dict = {
     "Pass": 0,
@@ -23,39 +31,44 @@ def get_philly_per_job_trace(jobid):
     gpu_traces = pd.read_csv(os.path.join(philly_data_dir, "gpu_util", "{}.csv".format(jobid)))
     mem_traces = pd.read_csv(os.path.join(philly_data_dir, "mem_util", "{}.csv".format(jobid)))
 
-<<<<<<< HEAD
     return [cpu_traces, gpu_traces, mem_traces]
-=======
-    return pd.concat([cpu_traces, gpu_traces, mem_traces], ignore_index=True)
 
 
-def load_philly_data(test_size=0.2):
+def get_scout_dataset_characteristics(filename):
+    if filename.endswith(".pickle"):
+        filename = filename.replace(".pickle", "")
+    if "=" in filename:
+        filename = filename.split("=")[0]
+    return pd.read_csv(os.path.join(scout_data_dir, "dataset_characteristics", "{}.csv".format(filename)), index_col=0)
 
-    status_to_num = {
-        'Pass': 0,
-        'Failed': 1,
-        'Killed': 2
-    }
 
-    with open(os.path.join(philly_data_dir, "sampled_jobs.json"), "r") as fin:
-        job_infos = json.load(fin)
-    train_jobs, test_jobs = train_test_split(job_infos, test_size=test_size, random_state=10)
-    pairs = list()
+def parse_scout_filename(filename):
+    if filename.endswith(".pickle"):
+        filename = filename.replace(".pickle", "")
+    tokens = filename.split("=")
+    eval_time = int(tokens[1])
+    hop_strs = tokens[0].split("&")
+    parsed_reductions = list()
+    for hop_str in hop_strs:
+        sub_tokens = hop_str.split("_")
+        reduce_time = int(sub_tokens[-1])
+        reduce_method = "_".join(sub_tokens[0:-1])
+        parsed_reductions.append((reduce_method, reduce_time))
+    return {"reduction": parsed_reductions, "eval_time": eval_time}
 
-    for job_info in (train_jobs, test_jobs):
-        job_dfs = list()
-        label_mapping = dict()
 
-        for job in job_info:
-            label_mapping[job['jobid']] = status_to_num[job['status']]
-            job_df = get_philly_per_job_trace(job['jobid'])
-            job_df['jobid'] = job['jobid']
-            job_dfs.append(job_df)
-        
-        pairs.append((pd.concat(job_dfs, ignore_index=True), label_mapping))
+def get_scout_hop_count(scout_reduction):
+    return len(scout_reduction["reduction"])
+
+
+def scout_is_prefix(reduction1, reduction2):
+    red1_str = "&".join([x[0] for x in reduction1["reduction"]])
+    red2_str = "&".join([x[0] for x in reduction2["reduction"]])
+    return red2_str.startswith(red1_str)
+
+
+def get_scout_all_next_hops(curr_reduction, all_reductions):
+    next_length = get_scout_hop_count(curr_reduction) + 1
+    candidates = [x for x in all_reductions if get_scout_all_next_hops(x) == next_length]
+    return [x for x in candidates if scout_is_prefix(curr_reduction, x)]
     
-    metadatas = ['jobid', 'name', 'machine_type', 'trace']
-    metrics = [x for x in pairs[0][0].columns if x not in metadatas]
-
-    return pairs[0][0], pairs[0][1], pairs[1][0], pairs[1][1], metadatas, metrics
->>>>>>> a97bbf2a68fe9f1ed4d9f066ee22e06d5ac6f269
