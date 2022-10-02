@@ -1,7 +1,7 @@
 import pandas as pd
 import json
 import os
-from sklearn.model_selection import train_test_split
+import numpy as np
 
 
 philly_data_dir = "data/philly"
@@ -15,7 +15,10 @@ scout_device_health_dir = "device_health_data"
 scout_azure_device_health_dir = os.path.join(scout_azure_dbfs_dir, scout_device_health_dir)
 scout_dummy_device_health_dir = os.path.join(scout_data_dir, scout_device_health_dir)
 
-scout_entity_types = ['cluster_swicth', 'switch', 'tor_switch', ]
+scout_guided_reduction_save_dir = "scout_guided_reduction"
+scout_naive_reduction_save_dir = "scout_unstructured_reduction"
+
+scout_entity_types = ['cluster_switch', 'switch', 'tor_switch', ]
 scout_tiers = {
     "cluster_switch": (0, 1),
     "switch": (0, 1, 2, 3),
@@ -28,8 +31,12 @@ philly_label_dict = {
     "Failed": 2
 }
 
+scout_metadata = ['IncidentId', 'EntityType', 'Tier']
+
 philly_start_time = -10
 philly_end_time = 3
+
+reduction_strengths = [0.2, 0.4, 0.6, 0.8]
 
 
 def get_philly_per_job_trace(jobid):
@@ -86,13 +93,55 @@ def load_device_health_report_columns():
     return cols
 
 
-def load_raw_incident_device_health_reports(on_azure=True):
-    pass
-
-
-def extract_tier_from_entity_name(entity_name, dummy=False):
+def load_raw_incident_device_health_reports(dummy=False):
     if dummy:
-        return None
+        source_dir = scout_dummy_device_health_dir
+    else:
+        source_dir = scout_azure_device_health_dir
+    
+    all_csv_files= [x for x in os.listdir(source_dir) if x.endswith(".csv")]
+    all_reports = list()
+    for fname in all_csv_files[:5]:
+        one_report = pd.read_csv(os.path.join(source_dir, fname))
+        all_reports.append(one_report)
+    
+    report_df = pd.concat(all_reports, axis=0)
+    dh_metric_cols = [x for x in report_df.columns[5:]]
+    report_df['Tier'] = report_df.apply(
+        lambda row: extract_tier_from_entity_name(row, dummy),
+        axis=1
+    )
+    return report_df[
+        ["IncidentId", "EntityType", "Tier",] + dh_metric_cols
+    ]
+
+
+def extract_tier_from_entity_name(row, dummy=False):
+    if dummy:
+        return "t{}".format(np.random.choice(scout_tiers[row["EntityType"]]))
     
     else:
+        # unimplemented
         return None
+
+
+def get_str_desc_of_reduction_function(method_str, granularity, **kwargs):
+
+    if granularity is None:
+        gran_str = 'None'
+    elif type(granularity) == str:
+        gran_str = granularity
+    else:
+        gran_str = "+".join(granularity)
+
+    keys = sorted(list(kwargs.keys()))
+    vals_joined = "-".join([str(kwargs[x]) for x in keys])
+    return "{}_{}_{}".format(method_str, gran_str, vals_joined)
+
+
+def if_file_w_prefix_exists(dir, prefix):
+    existing_files = os.listdir(dir)
+    for e_file in existing_files:
+        if e_file.startswith(prefix):
+            return True
+    return False

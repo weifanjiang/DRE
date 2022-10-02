@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 
 
-fake_incident_count = 5000
+fake_incident_count = 500
 reports_per_incident_lim = 20
 
 if os.path.isdir(utils.scout_dummy_device_health_dir):

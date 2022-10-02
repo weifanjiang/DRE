@@ -56,6 +56,8 @@ def subset_selection_problem(X, Y, **kwargs):
     tokeep = int(X.shape[0] * kwargs['keepFrac'])
     tokeep = min(tokeep, X.shape[0] - 1)
     tokeep = min(tokeep, X.shape[1] - 1)
+    tokeep = max(2, tokeep)
+
     d = np.shape(X)[1]
     N = np.shape(X)[0] - 1
     _, D, V = np.linalg.svd(X)
@@ -79,56 +81,8 @@ def subset_selection_problem(X, Y, **kwargs):
 
 def active_learning(X, Y, **kwargs):
     """
-    Active learning to sample rows in a batched fashion
-    requires labeled dataset
-    assume to be row sampling
-
-    Required params:
-    - model: RF, MLP, KNN (5 neighbors), KNNX (X = number of neighbors)
-    - initFrac: fraction of target samples randomly selected to initialize active learning (default 0.1)
-    - sampling: margin, entropy, uncertain (default), uncertainBatch, expected
-    - nQueries: number of iterations of active learning (default 10)
+    Semi-supervised learning based sample selection
     """
-    selected = list()
-    tokeep = int(X.shape[0] * kwargs["keepFrac"])
-    model = kwargs["model"]
-    if model == "RF":
-        d2d = RandomForestClassifier()
-    elif model == "MLP":
-        d2d = MLPClassifier()
-    elif model.startswith("KNN"):
-        if model == "KNN":
-            nn = 5
-        else:
-            nn = int(model.replace("KNN", ""))
-        d2d = KNeighborsClassifier(n_neighbors=nn)
-    
-    n_initial = max(int(kwargs.get("initFrac", 0.1) * tokeep), 1)
-    initial_idx = np.random.choice(range(X.shape[0]), size=n_initial, replace=False)
-    selected.extend(initial_idx.tolist())
-
-def subset_selection_problem(X, Y, **kwargs):
-    tokeep = int(min(X.shape[0], X.shape[1]) * kwargs["keepFrac"])
-    d = np.shape(X)[1]
-    N = np.shape(X)[0] - 1
-    _, D, V = np.linalg.svd(X)
-    V_k = calculate_right_eigenvectors_k_svd(X, tokeep)
-
-    if kwargs["selection"] == "volume":
-        NAL = k_Volume_Sampling_Sampler(X, tokeep, D, V, d)
-        A_S = NAL.MultiRounds()
-    elif kwargs["selection"] == "doublePhase":
-        NAL = double_Phase_Sampler(X, tokeep, V_k, d, 10*tokeep)
-        A_S = NAL.DoublePhase()
-    else:  # leverage
-        NAL = largest_leveragescores_Sampler(X, tokeep, V, d)
-        A_S = NAL.MultiRounds()
-    
-    selected = [int(x) for x in NAL.selected]
-    return selected[0:min(len(selected), tokeep)]
-
-
-def active_learning(X, Y, **kwargs):
     selected = list()
     tokeep = int(X.shape[0] * kwargs["keepFrac"])
     model = kwargs["model"]
@@ -186,6 +140,17 @@ def sampling_based_reduction(X, Y, **kwargs):
     return mapper[kwargs["method"]](X, Y, **kwargs)
 
 
+# helper function for percentiles used in pandas
+# https://stackoverflow.com/questions/17578115/pass-percentiles-to-pandas-agg-function
+def get_percentile_fun(pct):
+
+    def percentile_(x):
+        return np.percentile(x, pct)
+    percentile_.__name__ = "percentile_{}".format(pct)
+
+    return percentile_
+
+
 def aggregation_based_reduction(X, **kwargs):
     """
     Returns aggregated matrix X
@@ -235,7 +200,12 @@ def aggregation_based_reduction(X, **kwargs):
     else:  # row aggregation
         grb_criteria = kwargs["grb"]
         grb = X.groupby(by=grb_criteria)
+        functions_to_apply = list()
         for agg_option in range(1, kwargs["option"] + 1):
-            funcs, func_labels = aggregation_options[agg_option], aggregation_option_labels[agg_option]
             if agg_option == 1:
-                pass
+                functions_to_apply.extend(aggregation_options[agg_option])
+            else:
+                functions_to_apply.extend([
+                    get_percentile_fun(x) for x in aggregation_options[agg_option]
+                ])
+        return grb.agg(functions_to_apply)
