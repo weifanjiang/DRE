@@ -156,7 +156,7 @@ def if_file_w_prefix_exists(dir, prefix):
 
 def train_test_split_scout_data(raw_df, train_size):
 
-    all_incident_ids = raw_df.IncidentId.values
+    all_incident_ids = raw_df.IncidentId.unique()
     train_ids, test_ids = train_test_split(
         all_incident_ids,
         train_size=train_size,
