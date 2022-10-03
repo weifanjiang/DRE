@@ -29,7 +29,9 @@ def submodular_function_optimization(X, Y, **kwargs):
     """
     if kwargs["dir"] == 'col':
         X = X.transpose()
-    tokeep = int(X.shape[0] * kwargs['keepFrac'])
+    if X.shape[0] == 1:
+        return [0, ]
+    tokeep = max(1, int(X.shape[0] * kwargs['keepFrac']))
     if kwargs['model'] == 'fls':
         clf = apricot.FacilityLocationSelection(tokeep).fit(X)
     elif kwargs['model'] == 'fbs':
@@ -53,6 +55,10 @@ def subset_selection_problem(X, Y, **kwargs):
     """
     if kwargs["dir"] == 'row':
         X = X.transpose()
+
+    if X.shape[0] <= 2 or X.shape[1] <= 2:
+        return [x for x in range(X.shape[1])]
+
     tokeep = int(X.shape[0] * kwargs['keepFrac'])
     tokeep = min(tokeep, X.shape[0] - 1)
     tokeep = min(tokeep, X.shape[1] - 1)

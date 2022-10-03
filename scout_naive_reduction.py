@@ -2,6 +2,7 @@ import utils
 import reductions
 import os
 import time
+import pickle
 
 
 # dummy = False: running on Azure workspace
@@ -10,6 +11,7 @@ save_dir = utils.scout_naive_reduction_save_dir
 
 
 scout_raw_df = utils.load_raw_incident_device_health_reports(dummy=dummy)
+scout_raw_df, test_df = utils.train_test_split_scout_data(scout_raw_df, 0.8)
 
 
 # one hop naive reductions
@@ -65,11 +67,14 @@ for keepFrac in utils.reduction_strengths:
 
             
             save_file_name = os.path.join(
-                one_hop_out_dir, "{}_sec{}.csv".format(str_desc, time_taken)
+                one_hop_out_dir, "{}_sec{}.pickle".format(str_desc, time_taken)
             )
 
             to_save = scout_raw_df[utils.scout_metadata + selected_columns]
-            to_save.to_csv(save_file_name, index=False)
+            to_save_test = test_df[utils.scout_metadata + selected_columns]
+
+            with open(save_file_name, "wb") as fout:
+                pickle.dump((to_save, to_save_test), fout)
 
 
 # SSP
@@ -108,16 +113,20 @@ for keepFrac in utils.reduction_strengths:
 
             
             save_file_name = os.path.join(
-                one_hop_out_dir, "{}_sec{}.csv".format(str_desc, time_taken)
+                one_hop_out_dir, "{}_sec{}.pickle".format(str_desc, time_taken)
             )
 
             to_save = scout_raw_df[utils.scout_metadata + selected_columns]
-            to_save.to_csv(save_file_name, index=False)
+            to_save_test = test_df[utils.scout_metadata + selected_columns]
+
+            with open(save_file_name, "wb") as fout:
+                pickle.dump((to_save, to_save_test), fout)
 
 
 # Row aggregation
 cols_to_aggregate = [x for x in scout_raw_df if x not in utils.scout_metadata]
 agg_input = scout_raw_df[['IncidentId', ] + cols_to_aggregate]
+agg_input_test = test_df[['IncidentId', ] + cols_to_aggregate]
 
 for option in [1, 2, 3]:
 
@@ -137,6 +146,9 @@ for option in [1, 2, 3]:
         aggregated_result = reductions.aggregation_based_reduction(
             agg_input, dir="row", grb='IncidentId', option=option
         )
+        aggregated_result_test = reductions.aggregation_based_reduction(
+            agg_input_test, dir="row", grb='IncidentId', option=option
+        )
 
         end_time = time.time()
         time_taken = int(end_time - start_time)
@@ -148,9 +160,17 @@ for option in [1, 2, 3]:
         aggregated_result.columns = rename_col
         aggregated_result.reset_index(inplace=True)
 
+        rename_col_test = list()
+        for old_col in aggregated_result_test.columns:
+            rename_col_test.append(":".join(old_col))
+        
+        aggregated_result_test.columns = rename_col_test
+        aggregated_result_test.reset_index(inplace=True)
+
         save_file_name = os.path.join(
-            one_hop_out_dir, "{}_sec{}.csv".format(str_desc, time_taken)
+            one_hop_out_dir, "{}_sec{}.pickle".format(str_desc, time_taken)
         )
     
-        aggregated_result.to_csv(save_file_name, index=False)
+        with open(save_file_name, "wb") as fout:
+            pickle.dump((aggregated_result, aggregated_result_test), fout)
 

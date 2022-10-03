@@ -2,6 +2,9 @@ import pandas as pd
 import json
 import os
 import numpy as np
+import random
+
+from sklearn.model_selection import train_test_split
 
 
 philly_data_dir = "data/philly"
@@ -37,6 +40,10 @@ philly_start_time = -10
 philly_end_time = 3
 
 reduction_strengths = [0.2, 0.4, 0.6, 0.8]
+
+
+random.seed(10)
+np.random.seed(10)
 
 
 def get_philly_per_job_trace(jobid):
@@ -145,3 +152,26 @@ def if_file_w_prefix_exists(dir, prefix):
         if e_file.startswith(prefix):
             return True
     return False
+
+
+def train_test_split_scout_data(raw_df, train_size):
+
+    all_incident_ids = raw_df.IncidentId.values
+    train_ids, test_ids = train_test_split(
+        all_incident_ids,
+        train_size=train_size,
+        random_state=10
+    )
+
+    train_ids, test_ids = set(train_ids), set(test_ids)
+
+    train_df = raw_df[raw_df.IncidentId.isin(train_ids)]
+    test_df = raw_df[raw_df.IncidentId.isin(test_ids)]
+
+    return train_df, test_df
+
+
+def safe_get_subgroup(df_groupby, key):
+    if key in df_groupby.groups:
+        return df_groupby.get_group(key)
+    return None
