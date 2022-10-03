@@ -133,3 +133,6 @@ dmypy.json
 
 # VSCode files
 .vscode
+
+# generated data
+data/scout/
