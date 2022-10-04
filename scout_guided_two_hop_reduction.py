@@ -152,7 +152,7 @@ for one_hop_filepath in tqdm(one_hop_filepaths):
 
                         elif method == "ssp":
 
-                            for sampler in ['volume', 'doublePhase', 'leverage']:
+                            for sampler in ['doublePhase', 'leverage']:
                                 str_desc = get_str_desc_of_reduction_function(
                                     next_algo,
                                     granularity,

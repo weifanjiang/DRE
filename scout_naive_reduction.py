@@ -1,5 +1,6 @@
-import utils
-import reductions
+from utils import *
+from reductions import *
+
 import os
 import time
 import pickle
@@ -7,11 +8,11 @@ import pickle
 
 # dummy = False: running on Azure workspace
 dummy = True
-save_dir = utils.scout_naive_reduction_save_dir
+save_dir = scout_naive_reduction_save_dir
 
 
-scout_raw_df = utils.load_raw_incident_device_health_reports(dummy=dummy)
-scout_raw_df, test_df = utils.train_test_split_scout_data(scout_raw_df, 0.8)
+scout_raw_df = load_raw_incident_device_health_reports(dummy=dummy)
+scout_raw_df, test_df = train_test_split_scout_data(scout_raw_df, 0.8)
 
 
 # one hop naive reductions
@@ -19,25 +20,25 @@ scout_raw_df, test_df = utils.train_test_split_scout_data(scout_raw_df, 0.8)
 # since real scout data has too much rows to be sampled without aggregated
 if dummy:
     one_hop_out_dir = os.path.join(
-        utils.scout_data_dir,
+        scout_data_dir,
         save_dir,
         "one_hop"
     )
 else:
     one_hop_out_dir = os.path.join(
-        utils.scout_azure_dbfs_dir,
+        scout_azure_dbfs_dir,
         save_dir,
         "one_hop"
     )
 os.system("mkdir -p {}".format(one_hop_out_dir))
 
 # SMF
-smf_cols_to_reduce = [x for x in scout_raw_df if x not in utils.scout_metadata]
+smf_cols_to_reduce = [x for x in scout_raw_df if x not in scout_metadata]
 smf_input_mat = scout_raw_df[smf_cols_to_reduce].values
-for keepFrac in utils.reduction_strengths:
+for keepFrac in reduction_strengths:
     for model in ['fls', 'fbs']:
 
-        str_desc = utils.get_str_desc_of_reduction_function(
+        str_desc = get_str_desc_of_reduction_function(
             "ColSampling",
             None,
             method='smf',
@@ -47,11 +48,11 @@ for keepFrac in utils.reduction_strengths:
         )
 
         # check if file exists in directory
-        if not utils.if_file_w_prefix_exists(one_hop_out_dir, str_desc):
+        if not if_file_w_prefix_exists(one_hop_out_dir, str_desc):
             
             start_time = time.time()
 
-            selected_idx = reductions.sampling_based_reduction(
+            selected_idx = sampling_based_reduction(
                 smf_input_mat,
                 None,
                 method='smf',
@@ -70,20 +71,20 @@ for keepFrac in utils.reduction_strengths:
                 one_hop_out_dir, "{}_sec{}.pickle".format(str_desc, time_taken)
             )
 
-            to_save = scout_raw_df[utils.scout_metadata + selected_columns]
-            to_save_test = test_df[utils.scout_metadata + selected_columns]
+            to_save = scout_raw_df[scout_metadata + selected_columns]
+            to_save_test = test_df[scout_metadata + selected_columns]
 
             with open(save_file_name, "wb") as fout:
                 pickle.dump((to_save, to_save_test), fout)
 
 
 # SSP
-ssp_cols_to_reduce = [x for x in scout_raw_df if x not in utils.scout_metadata]
+ssp_cols_to_reduce = [x for x in scout_raw_df if x not in scout_metadata]
 ssp_input_mat = scout_raw_df[ssp_cols_to_reduce].values
-for keepFrac in utils.reduction_strengths:
+for keepFrac in reduction_strengths:
     for sampler in ['volume', 'doublePhase', 'leverage']:
 
-        str_desc = utils.get_str_desc_of_reduction_function(
+        str_desc = get_str_desc_of_reduction_function(
             "ColSampling",
             None,
             method='ssp',
@@ -93,11 +94,11 @@ for keepFrac in utils.reduction_strengths:
         )
 
         # check if file exists in directory
-        if not utils.if_file_w_prefix_exists(one_hop_out_dir, str_desc):
+        if not if_file_w_prefix_exists(one_hop_out_dir, str_desc):
 
             start_time = time.time()
 
-            selected_idx = reductions.sampling_based_reduction(
+            selected_idx = sampling_based_reduction(
                 ssp_input_mat,
                 None,
                 method='ssp',
@@ -116,21 +117,21 @@ for keepFrac in utils.reduction_strengths:
                 one_hop_out_dir, "{}_sec{}.pickle".format(str_desc, time_taken)
             )
 
-            to_save = scout_raw_df[utils.scout_metadata + selected_columns]
-            to_save_test = test_df[utils.scout_metadata + selected_columns]
+            to_save = scout_raw_df[scout_metadata + selected_columns]
+            to_save_test = test_df[scout_metadata + selected_columns]
 
             with open(save_file_name, "wb") as fout:
                 pickle.dump((to_save, to_save_test), fout)
 
 
 # Row aggregation
-cols_to_aggregate = [x for x in scout_raw_df if x not in utils.scout_metadata]
+cols_to_aggregate = [x for x in scout_raw_df if x not in scout_metadata]
 agg_input = scout_raw_df[['IncidentId', ] + cols_to_aggregate]
 agg_input_test = test_df[['IncidentId', ] + cols_to_aggregate]
 
 for option in [1, 2, 3]:
 
-    str_desc = utils.get_str_desc_of_reduction_function(
+    str_desc = get_str_desc_of_reduction_function(
         "RowAgg",
         None,
         dir="row",
@@ -139,14 +140,14 @@ for option in [1, 2, 3]:
     )
 
     # check if file exists in directory
-    if not utils.if_file_w_prefix_exists(one_hop_out_dir, str_desc):
+    if not if_file_w_prefix_exists(one_hop_out_dir, str_desc):
 
         start_time = time.time()
 
-        aggregated_result = reductions.aggregation_based_reduction(
+        aggregated_result = aggregation_based_reduction(
             agg_input, dir="row", grb='IncidentId', option=option
         )
-        aggregated_result_test = reductions.aggregation_based_reduction(
+        aggregated_result_test = aggregation_based_reduction(
             agg_input_test, dir="row", grb='IncidentId', option=option
         )
 

@@ -95,7 +95,7 @@ for granularity in granularities:
                             pickle.dump((to_save, to_save_test), fout)
 
             else:  # ssp
-                for sampler in ['volume', 'doublePhase', 'leverage']:
+                for sampler in ['doublePhase', 'leverage']:
 
                     str_desc = get_str_desc_of_reduction_function(
                         "ColSampling",

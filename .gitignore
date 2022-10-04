@@ -138,4 +138,4 @@ dmypy.json
 data/scout/
 
 # google unzip data
-data/google/google
+data/google/data_*.npz

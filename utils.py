@@ -21,6 +21,18 @@ scout_dummy_device_health_dir = os.path.join(scout_data_dir, scout_device_health
 scout_guided_reduction_save_dir = "scout_guided_reduction"
 scout_naive_reduction_save_dir = "scout_unstructured_reduction"
 
+scout_dummy_label_path = os.path.join(scout_data_dir, "labels.csv")
+
+scout_automl_evaluate_dir = "scout_automl_evaluate"
+scout_dummy_automl_eval_dir = os.path.join(scout_data_dir, scout_automl_evaluate_dir)
+scout_dbfs_automl_eval_dir = os.path.join(scout_azure_dbfs_dir, scout_automl_evaluate_dir)
+
+os.system("mkdir -p {}".format(scout_dummy_automl_eval_dir))
+os.system("mkdir -p {}".format(scout_dbfs_automl_eval_dir))
+
+scout_automl_time = 100
+scout_mem_limit = 20000
+
 scout_entity_types = ['cluster_switch', 'switch', 'tor_switch', ]
 scout_tiers = {
     "cluster_switch": (0, 1),
@@ -129,7 +141,6 @@ def extract_tier_from_entity_name(row, dummy=False):
         return "t{}".format(np.random.choice(scout_tiers[row["EntityType"]]))
     
     else:
-        # unimplemented
         # sample: dsm06-0102-0130-07t0
         entity_name = row['EntityName']
         return "t" + entity_name.split("-")[-1].split('t')[-1]
@@ -178,3 +189,27 @@ def safe_get_subgroup(df_groupby, key):
     if key in df_groupby.groups:
         return df_groupby.get_group(key)
     return None
+
+
+def scout_load_labels(df_list, dummy=False):
+
+    if not dummy:
+        label_df = pd.read_csv(scout_dummy_label_path)
+    else:
+        label_paths = [x for x in os.listdir(scout_azure_dbfs_dir) if x.startswith("sampled_incidents_")]
+        label_paths = [x for x in label_paths if x.endswith(".csv")]
+
+        loaded = list()
+        for label_path in label_paths:
+            loaded.append(pd.read_csv(os.path.join(scout_azure_dbfs_dir, label_path))[['IncidentId', 'Label']])
+        label_df = pd.concat(loaded, axis=0).reset_index(drop=True).drop_duplicates(ignore_index=True)
+    
+    label_dict = dict()
+    for _, row in label_df.iterrows():
+        label_dict[row["IncidentId"]] = int(row["Label"])
+    
+    extracted_labels = list()
+    for df in df_list:
+        extracted_labels.append([label_dict[x] for x in df.IncidentId.values])
+
+    return extracted_labels
