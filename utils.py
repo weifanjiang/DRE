@@ -108,7 +108,7 @@ def load_raw_incident_device_health_reports(dummy=False):
     
     all_csv_files= [x for x in os.listdir(source_dir) if x.endswith(".csv")]
     all_reports = list()
-    for fname in all_csv_files[:5]:
+    for fname in all_csv_files:
         one_report = pd.read_csv(os.path.join(source_dir, fname))
         all_reports.append(one_report)
     
@@ -118,6 +118,7 @@ def load_raw_incident_device_health_reports(dummy=False):
         lambda row: extract_tier_from_entity_name(row, dummy),
         axis=1
     )
+    report_df = report_df[report_df['Tier'].isin(['t0', 't1', 't2', 't3'])]
     return report_df[
         ["IncidentId", "EntityType", "Tier",] + dh_metric_cols
     ]
@@ -129,7 +130,9 @@ def extract_tier_from_entity_name(row, dummy=False):
     
     else:
         # unimplemented
-        return None
+        # sample: dsm06-0102-0130-07t0
+        entity_name = row['EntityName']
+        return "t" + entity_name.split("-")[-1].split('t')[-1]
 
 
 def get_str_desc_of_reduction_function(method_str, granularity, **kwargs):

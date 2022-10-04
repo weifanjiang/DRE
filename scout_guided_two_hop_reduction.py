@@ -1,5 +1,7 @@
-import reductions
-import utils
+from utils import *
+from reductions import *
+
+
 import pickle
 import os
 import time
@@ -8,7 +10,7 @@ import pandas as pd
 
 # dummy = False: running on Azure workspace
 dummy = True
-save_dir = utils.scout_guided_reduction_save_dir
+save_dir = scout_guided_reduction_save_dir
 
 
 if dummy:
@@ -18,23 +20,23 @@ else:
 
 if dummy:
     one_hop_out_dir = os.path.join(
-        utils.scout_data_dir,
+        scout_data_dir,
         save_dir,
         "one_hop"
     )
     two_hop_out_dir = os.path.join(
-        utils.scout_data_dir,
+        scout_data_dir,
         save_dir,
         "two_hop"
     )
 else:
     one_hop_out_dir = os.path.join(
-        utils.scout_azure_dbfs_dir,
+        scout_azure_dbfs_dir,
         save_dir,
         "one_hop"
     )
     two_hop_out_dir = os.path.join(
-        utils.scout_azure_dbfs_dir,
+        scout_azure_dbfs_dir,
         save_dir,
         "two_hop"
     )
@@ -65,7 +67,7 @@ for one_hop_filepath in tqdm(one_hop_filepaths):
             next_algos.add(candidate)
         
     # get available metadatas in the reduced dataset
-    existing_metadatas = [x for x in utils.scout_metadata if x in train_df.columns]
+    existing_metadatas = [x for x in scout_metadata if x in train_df.columns]
     possible_granularities = list()
     if 'EntityType' in existing_metadatas:
         possible_granularities.append('EntityType')
@@ -73,6 +75,8 @@ for one_hop_filepath in tqdm(one_hop_filepaths):
         possible_granularities.append('Tier')
     if len(possible_granularities) == 2:
         possible_granularities.append(['EntityType', 'Tier'])
+    
+    prev_granularity = one_hop_filepath.split("_")
     
     for granularity in possible_granularities:
 
@@ -85,13 +89,13 @@ for one_hop_filepath in tqdm(one_hop_filepaths):
                 dir = next_algo[0:3].lower()
                 
                 cols_to_sample = [x for x in train_df.columns if x not in existing_metadatas]
-                for keepFrac in utils.reduction_strengths:
+                for keepFrac in reduction_strengths:
 
                     for method in ["smf", "ssp"]:
                         if method == "smf":
                             for model in ["fls", "fbs"]:
                                 
-                                str_desc = utils.get_str_desc_of_reduction_function(
+                                str_desc = get_str_desc_of_reduction_function(
                                     next_algo,
                                     granularity,
                                     method=method,
@@ -101,13 +105,13 @@ for one_hop_filepath in tqdm(one_hop_filepaths):
                                 )
                                 two_hop_desc = one_hop_str + "&" + str_desc
 
-                                if not utils.if_file_w_prefix_exists(two_hop_out_dir, two_hop_desc):
+                                if not if_file_w_prefix_exists(two_hop_out_dir, two_hop_desc):
                                     processed = list()
                                     processed_test = list()
                                     time_taken = 0
                                     for key, sub_df in grb_gran:
                                         start_time = time.time()
-                                        selected_idx = reductions.sampling_based_reduction(
+                                        selected_idx = sampling_based_reduction(
                                             sub_df[cols_to_sample].values,
                                             None,
                                             method=method,
@@ -118,17 +122,17 @@ for one_hop_filepath in tqdm(one_hop_filepaths):
                                         end_time = time.time()
                                         time_taken += end_time - start_time
                                         
-                                        sub_df_test = utils.safe_get_subgroup(grb_gran_test, key)
+                                        sub_df_test = safe_get_subgroup(grb_gran_test, key)
                                         if dir == 'col':
                                             selected_columns = [cols_to_sample[x] for x in selected_idx]
                                             processed.append(
-                                                sub_df[utils.scout_metadata + selected_columns]
+                                                sub_df[scout_metadata + selected_columns]
                                             )
 
                                             # handle test data
                                             if sub_df_test is not None:
                                                 processed_test.append(
-                                                    sub_df_test[utils.scout_metadata + selected_columns]
+                                                    sub_df_test[scout_metadata + selected_columns]
                                                 )
                                         else:  # row sampling
                                             processed.append(sub_df.iloc[selected_idx])
@@ -149,7 +153,7 @@ for one_hop_filepath in tqdm(one_hop_filepaths):
                         elif method == "ssp":
 
                             for sampler in ['volume', 'doublePhase', 'leverage']:
-                                str_desc = utils.get_str_desc_of_reduction_function(
+                                str_desc = get_str_desc_of_reduction_function(
                                     next_algo,
                                     granularity,
                                     method='ssp',
@@ -159,13 +163,13 @@ for one_hop_filepath in tqdm(one_hop_filepaths):
                                 )
                                 two_hop_desc = one_hop_str + "&" + str_desc
 
-                                if not utils.if_file_w_prefix_exists(two_hop_out_dir, two_hop_desc):
+                                if not if_file_w_prefix_exists(two_hop_out_dir, two_hop_desc):
                                     processed = list()
                                     processed_test = list()
                                     time_taken = 0
                                     for key, sub_df in grb_gran:
                                         start_time = time.time()
-                                        selected_idx = reductions.sampling_based_reduction(
+                                        selected_idx = sampling_based_reduction(
                                             sub_df[cols_to_sample].values,
                                             None,
                                             method=method,
@@ -176,17 +180,17 @@ for one_hop_filepath in tqdm(one_hop_filepaths):
                                         end_time = time.time()
                                         time_taken += end_time - start_time
                                         
-                                        sub_df_test = utils.safe_get_subgroup(grb_gran_test, key)
+                                        sub_df_test = safe_get_subgroup(grb_gran_test, key)
                                         if dir == 'col':
                                             selected_columns = [cols_to_sample[x] for x in selected_idx]
                                             processed.append(
-                                                sub_df[utils.scout_metadata + selected_columns]
+                                                sub_df[scout_metadata + selected_columns]
                                             )
 
                                             # handle test data
                                             if sub_df_test is not None:
                                                 processed_test.append(
-                                                    sub_df_test[utils.scout_metadata + selected_columns]
+                                                    sub_df_test[scout_metadata + selected_columns]
                                                 )
                                         else:  # row sampling
                                             processed.append(sub_df.iloc[selected_idx])
@@ -207,11 +211,11 @@ for one_hop_filepath in tqdm(one_hop_filepaths):
 
             elif next_algo == "RowAgg":
 
-                agg_cols = [x for x in train_df.columns if x not in utils.scout_metadata]
+                agg_cols = [x for x in train_df.columns if x not in scout_metadata]
                 agg_cols = ['IncidentId', ] + agg_cols
 
                 for option in [1, 2, 3, ]:
-                    str_desc = utils.get_str_desc_of_reduction_function(
+                    str_desc = get_str_desc_of_reduction_function(
                         "RowAgg",
                         granularity,
                         dir="row",
@@ -220,14 +224,14 @@ for one_hop_filepath in tqdm(one_hop_filepaths):
                     )
                     two_hop_desc = one_hop_str + "&" + str_desc
 
-                    if not utils.if_file_w_prefix_exists(two_hop_out_dir, two_hop_desc):
+                    if not if_file_w_prefix_exists(two_hop_out_dir, two_hop_desc):
                         processed = list()
                         processed_test = list()
                         time_taken = 0
 
                         for keys, sub_df in grb_gran:
                             start_time = time.time()
-                            aggregated_result = reductions.aggregation_based_reduction(
+                            aggregated_result = aggregation_based_reduction(
                                 sub_df[agg_cols], dir="row", grb='IncidentId', option=option
                             )
                             time_taken += int(time.time() - start_time)
@@ -247,9 +251,9 @@ for one_hop_filepath in tqdm(one_hop_filepaths):
 
                             processed.append(aggregated_result)
 
-                            sub_df_test = utils.safe_get_subgroup(grb_gran_test, keys)
+                            sub_df_test = safe_get_subgroup(grb_gran_test, keys)
                             if sub_df_test is not None:
-                                aggregated_result_test = reductions.aggregation_based_reduction(
+                                aggregated_result_test = aggregation_based_reduction(
                                     sub_df_test[agg_cols], dir="row", grb='IncidentId', option=option
                                 )
                                 rename_col_test = list()
@@ -270,8 +274,8 @@ for one_hop_filepath in tqdm(one_hop_filepaths):
                         to_save_test = pd.concat(processed_test, axis=0, ignore_index=True)
 
                         # reorganize columns
-                        metadata_left = [x for x in utils.scout_metadata if x in granularity]
-                        metrics_left = [x for x in to_save.columns if x not in utils.scout_metadata]
+                        metadata_left = [x for x in scout_metadata if x in granularity]
+                        metrics_left = [x for x in to_save.columns if x not in scout_metadata]
 
                         out_columns = ['IncidentId', ] + metadata_left + metrics_left
 

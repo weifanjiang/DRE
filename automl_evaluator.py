@@ -1,6 +1,7 @@
+from utils import *
+from reductions import *
+
 import autosklearn.classification
-import utils
-import reductions
 import pickle
 import pandas as pd
 import os
@@ -18,12 +19,12 @@ def scout_evaluator(scout_savepath):
         # and 3 as aggregation function option
 
         train_test_processed = list()
-        grb_cols = ['IncidentId', ] + [x for x in train_df.columns if x not in utils.scout_metadata]
+        grb_cols = ['IncidentId', ] + [x for x in train_df.columns if x not in scout_metadata]
         for raw_df in [train_df, test_df,]:
             grb_gran = raw_df.groupby(by=['EntityType', 'Tier'])
             processed = list()
             for keys, sub_df in grb_gran:
-                aggregated_result = reductions.aggregation_based_reduction(
+                aggregated_result = aggregation_based_reduction(
                     sub_df[grb_cols], dir="row", grb='IncidentId', option=3
                 )
                 rename_col = list()
@@ -38,8 +39,8 @@ def scout_evaluator(scout_savepath):
             
             # reorganize columns
             to_save = pd.concat(processed, axis=0, ignore_index=True)
-            metadata_left = [x for x in utils.scout_metadata if x in ['EntityType', 'Tier']]
-            metrics_left = [x for x in to_save.columns if x not in utils.scout_metadata]
+            metadata_left = [x for x in scout_metadata if x in ['EntityType', 'Tier']]
+            metrics_left = [x for x in to_save.columns if x not in scout_metadata]
             to_save = to_save[['IncidentId', ] + metadata_left + metrics_left]
             
             train_test_processed.append(to_save)
