@@ -27,8 +27,11 @@ scout_automl_evaluate_dir = "scout_automl_evaluate"
 scout_dummy_automl_eval_dir = os.path.join(scout_data_dir, scout_automl_evaluate_dir)
 scout_dbfs_automl_eval_dir = os.path.join(scout_azure_dbfs_dir, scout_automl_evaluate_dir)
 
-os.system("mkdir -p {}".format(scout_dummy_automl_eval_dir))
-os.system("mkdir -p {}".format(scout_dbfs_automl_eval_dir))
+if os.path.isdir(scout_data_dir):
+    os.system("mkdir -p {}".format(scout_dummy_automl_eval_dir))
+
+if os.path.isdir(scout_azure_dbfs_dir):
+    os.system("mkdir -p {}".format(scout_dbfs_automl_eval_dir))
 
 scout_automl_time = 100
 scout_mem_limit = 20000
@@ -131,9 +134,13 @@ def load_raw_incident_device_health_reports(dummy=False):
         axis=1
     )
     report_df = report_df[report_df['Tier'].isin(['t0', 't1', 't2', 't3'])]
-    return report_df[
+    report_df.fillna(0, inplace=True)
+    min_metric_val = np.amin(report_df[dh_metric_cols].values)
+    report_df[dh_metric_cols] = report_df[dh_metric_cols].values + min_metric_val
+    report_df = report_df[
         ["IncidentId", "EntityType", "Tier",] + dh_metric_cols
     ]
+    return report_df
 
 
 def extract_tier_from_entity_name(row, dummy=False):
@@ -193,7 +200,7 @@ def safe_get_subgroup(df_groupby, key):
 
 def scout_load_labels(df_list, dummy=False):
 
-    if not dummy:
+    if dummy:
         label_df = pd.read_csv(scout_dummy_label_path)
     else:
         label_paths = [x for x in os.listdir(scout_azure_dbfs_dir) if x.startswith("sampled_incidents_")]
