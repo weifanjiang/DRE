@@ -139,3 +139,8 @@ data/scout/
 
 # google unzip data
 data/google/data_*.npz
+
+# philly
+data/philly/cpu_util/*
+data/philly/gpu_util/*
+data/philly/mem_util/*
