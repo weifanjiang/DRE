@@ -78,10 +78,11 @@ for granularity in granularities:
                             )
 
                             # handle test data
-                            sub_df_test = grb_gran_test.get_group(key)
-                            processed_test.append(
-                                sub_df_test[scout_metadata + selected_columns]
-                            )
+                            sub_df_test = safe_get_subgroup(grb_gran_test, key)
+                            if sub_df_test is not None:
+                                processed_test.append(
+                                    sub_df_test[scout_metadata + selected_columns]
+                                )
 
                         time_taken = int(time_taken)
                         save_file_name = os.path.join(
@@ -113,7 +114,7 @@ for granularity in granularities:
                         processed = list()
                         processed_test = list()
                         time_taken = 0
-                        for _, sub_df in grb_gran:
+                        for key, sub_df in grb_gran:
                             if sub_df.shape[0] > 2:  # pre-condition for ssp
                                 start_time = time.time()
                                 selected_idx = sampling_based_reduction(
@@ -132,10 +133,11 @@ for granularity in granularities:
                                 )
 
                                 # handle test data
-                                sub_df_test = grb_gran_test.get_group(key)
-                                processed_test.append(
-                                    sub_df_test[scout_metadata + selected_columns]
-                                )
+                                sub_df_test = safe_get_subgroup(grb_gran_test, key)
+                                if sub_df_test is not None:
+                                    processed_test.append(
+                                        sub_df_test[scout_metadata + selected_columns]
+                                    )
 
                         time_taken = int(time_taken)
                         save_file_name = os.path.join(
@@ -190,23 +192,24 @@ for granularity in granularities:
 
                 processed.append(aggregated_result)
 
-                sub_df_test = grb_gran_test.get_group(keys)
-                aggregated_result_test = aggregation_based_reduction(
-                    sub_df_test[grb_cols], dir="row", grb='IncidentId', option=option
-                )
-                rename_col_test = list()
-                for old_col in aggregated_result_test.columns:
-                    rename_col_test.append(":".join(old_col))
-                aggregated_result_test.columns = rename_col
-                aggregated_result_test.reset_index(inplace=True)
+                sub_df_test = safe_get_subgroup(grb_gran_test, keys)
+                if sub_df_test is not None:
+                    aggregated_result_test = aggregation_based_reduction(
+                        sub_df_test[grb_cols], dir="row", grb='IncidentId', option=option
+                    )
+                    rename_col_test = list()
+                    for old_col in aggregated_result_test.columns:
+                        rename_col_test.append(":".join(old_col))
+                    aggregated_result_test.columns = rename_col
+                    aggregated_result_test.reset_index(inplace=True)
 
-                if type(granularity) != str:
-                    for gran_name, gran_val in zip(granularity, keys):
-                        aggregated_result_test[gran_name] = gran_val
-                else:
-                    aggregated_result_test[granularity] = keys
-                
-                processed_test.append(aggregated_result_test)
+                    if type(granularity) != str:
+                        for gran_name, gran_val in zip(granularity, keys):
+                            aggregated_result_test[gran_name] = gran_val
+                    else:
+                        aggregated_result_test[granularity] = keys
+                    
+                    processed_test.append(aggregated_result_test)
 
             to_save = pd.concat(processed, axis=0, ignore_index=True)
             to_save_test = pd.concat(processed_test, axis=0, ignore_index=True)

@@ -3,12 +3,15 @@ import json
 import os
 import numpy as np
 import random
+import uuid
+import pickle
 
 from sklearn.model_selection import train_test_split
 
 
 philly_data_dir = "data/philly"
 scout_data_dir = "data/scout"
+gcut_data_dir = "data/gcut"
 
 scout_total_size = 312049 * 230
 
@@ -20,6 +23,9 @@ scout_dummy_device_health_dir = os.path.join(scout_data_dir, scout_device_health
 
 scout_guided_reduction_save_dir = "scout_guided_reduction"
 scout_naive_reduction_save_dir = "scout_unstructured_reduction"
+gcut_naive_reduction_save_dir = "gcut_unstructured_reduction"
+philly_naive_reduction_save_dir = "philly_unstructured_reduction"
+philly_guided_reduction_save_dir = "philly_guided_reduction"
 
 scout_dummy_label_path = os.path.join(scout_data_dir, "labels.csv")
 
@@ -36,6 +42,9 @@ if os.path.isdir(scout_azure_dbfs_dir):
 scout_automl_time = 100
 scout_mem_limit = 20000
 
+gcut_automl_time = 120
+gcut_mem_limit = 300000
+
 scout_entity_types = ['cluster_switch', 'switch', 'tor_switch', ]
 scout_tiers = {
     "cluster_switch": (0, 1),
@@ -50,6 +59,8 @@ philly_label_dict = {
 }
 
 scout_metadata = ['IncidentId', 'EntityType', 'Tier']
+gcut_metadata = ["TaskId", "Label", "TimeWindow"]
+philly_metadata = ["JobId", "Label", "MachineType", "CPU", "GPU", "TraceType"]
 
 philly_start_time = -10
 philly_end_time = 3
@@ -135,8 +146,8 @@ def load_raw_incident_device_health_reports(dummy=False):
     )
     report_df = report_df[report_df['Tier'].isin(['t0', 't1', 't2', 't3'])]
     report_df.fillna(0, inplace=True)
-    min_metric_val = np.amin(report_df[dh_metric_cols].values)
-    report_df[dh_metric_cols] = report_df[dh_metric_cols].values + min_metric_val
+    min_metric_val_abs = abs(np.amin(report_df[dh_metric_cols].values))
+    report_df[dh_metric_cols] = report_df[dh_metric_cols].values + min_metric_val_abs
     report_df = report_df[
         ["IncidentId", "EntityType", "Tier",] + dh_metric_cols
     ]
@@ -220,3 +231,156 @@ def scout_load_labels(df_list, dummy=False):
         extracted_labels.append([label_dict[x] for x in df.IncidentId.values])
 
     return extracted_labels
+
+
+def add_missing_cols_to_test(train_df, test_df):
+    missing_cols = [x for x in train_df.columns if x not in test_df.columns]
+    for missing_col in missing_cols:
+        test_df[missing_col] = None
+    test_df = test_df[train_df.columns]
+    return test_df
+
+
+def load_google_dataset():
+
+    if os.path.isfile("data/gcut/google/gcut_df.pickle"):
+        with open("data/gcut/google/gcut_df.pickle", "rb") as fin:
+            processed_df = pickle.load(fin)
+    else:
+        google_col_names = [
+            'CPU_rate',
+            'MEM_canonical_usage',
+            'MEM_assigned_usage',
+            'CACHE_unmapped_page',
+            'CACHE_total_page',
+            'MEM_maximum_usage',
+            'DISK_local_space_usage',
+            'CPU_maximum_rate',
+            'CPU_sampled_usage'
+        ]
+
+        train_data = np.load("data/gcut/google/data_train.npz")
+        test_data = np.load("data/gcut/google/data_test.npz")
+
+        # only keep the first 50 measurement cycles
+        train_mat = train_data["data_feature.npy"][:, :50, :]
+        test_mat = test_data["data_feature.npy"][:, :50, :]
+
+        train_label = np.argmax(train_data["data_attribute.npy"], axis=1)
+        test_label = np.argmax(test_data["data_attribute.npy"], axis=1)
+
+        processed_df = list()
+        
+        for feature_mat, labels in [(train_mat, train_label), (test_mat, test_label)]:
+
+            processed_tasks = list()
+            for i in range(feature_mat.shape[0]):
+                task_mat = feature_mat[i]
+                task_df = pd.DataFrame(task_mat, columns=google_col_names)
+                task_df["TaskId"] = str(uuid.uuid1())
+                task_df["TimeWindow"] = np.linspace(0, 49, 50).astype(int)
+                task_df["Label"] = labels[i]
+
+                processed_tasks.append(task_df)
+            
+            processed_df.append(pd.concat(processed_tasks, axis=0, ignore_index=True))
+        
+        with open("data/gcut/google/gcut_df.pickle", "wb") as fout:
+            pickle.dump(processed_df, fout)
+
+    return processed_df
+
+def is_valid(row):
+    keys = row.keys()
+    for key in keys:
+        if key not in philly_metadata:
+            try:
+                float(row[key])
+            except:
+                return False
+            if float(row[key]) < 0:
+                return False
+    return True
+
+
+def load_philly_dataset():
+    
+    with open(os.path.join(philly_data_dir, "sampled_jobs.json"), "r") as fin:
+        sampled_jobs = json.load(fin)
+    
+    cpu_dfs, gpu_dfs, mem_dfs = list(), list(), list()
+    for job in sampled_jobs:
+        jobid = job["jobid"]
+        cpu = pd.read_csv(os.path.join(philly_data_dir, "cpu_util", "{}.csv".format(jobid)))
+        gpu = pd.read_csv(os.path.join(philly_data_dir, "gpu_util", "{}.csv".format(jobid)))
+        mem = pd.read_csv(os.path.join(philly_data_dir, "mem_util", "{}.csv".format(jobid)))
+
+        for df in [cpu, gpu, mem]:
+            df["JobId"] = jobid
+            df["Label"] = int(job["status"] == 'Pass')
+        
+        cpu_dfs.append(cpu)
+        gpu_dfs.append(gpu)
+        mem_dfs.append(mem)
+
+    cpu_df = pd.concat(cpu_dfs, ignore_index=True, axis=0)
+    gpu_df = pd.concat(gpu_dfs, ignore_index=True, axis=0)
+    mem_df = pd.concat(mem_dfs, ignore_index=True, axis=0)
+
+    # fix schema
+    cpu_df.rename(columns={"name": "CPU", "trace": "TraceType", "machine_type": "MachineType"}, inplace=True)
+    cpu_df["GPU"] = None
+
+    gpu_df["CPU"] = gpu_df.apply(lambda row: row["name"].split("_")[0], axis=1)
+    gpu_df["GPU"] = gpu_df.apply(lambda row: row["name"].split("_")[1], axis=1)
+    gpu_df.drop(columns=["name", ], inplace=True)
+    gpu_df.rename(columns={"trace": "TraceType", "machine_type": "MachineType"}, inplace=True)
+
+    mem_df.rename(columns={"name": "CPU", "trace": "TraceType", "machine_type": "MachineType"}, inplace=True)
+    mem_df["GPU"] = None
+
+    # join all traces
+    philly_df = pd.concat([cpu_df, gpu_df, mem_df], axis=0, ignore_index=True)
+
+    # fix column order
+    philly_metrics = sorted([x for x in philly_df.columns if x not in philly_metadata])
+    reorder_cols = philly_metadata + philly_metrics
+
+    # remove invalid rows
+    valid = philly_df.apply(lambda row: is_valid(row), axis=1)
+    philly_df = philly_df[valid]
+
+    # fill na
+    philly_df[philly_metrics] = philly_df[philly_metrics].fillna(0)
+
+    return philly_df[reorder_cols]
+
+
+def train_test_split_philly_data(raw_df, train_size=0.7):
+
+    no_dup_df = raw_df[['JobId', 'Label']].drop_duplicates(ignore_index=True)
+    jobids = no_dup_df.JobId.values
+    labels = no_dup_df.Label.values
+    job_id_train, job_id_test = train_test_split(jobids, stratify=labels, random_state=10, train_size=train_size)
+
+    job_id_train = set(job_id_train)
+    job_id_test = set(job_id_test)
+
+    train_df = raw_df[raw_df.JobId.isin(job_id_train)]
+    test_df = raw_df[raw_df.JobId.isin(job_id_test)]
+
+    return train_df, test_df
+
+
+def load_train_test_split_philly_dataset():
+
+    train_path = os.path.join(philly_data_dir, "philly_train.csv")
+    test_path = os.path.join(philly_data_dir, "philly_test.csv")
+    if os.path.isfile(train_path) and os.path.isfile(test_path):
+        train_df, test_df = pd.read_csv(train_path), pd.read_csv(test_path)
+    else:
+        train_df, test_df = train_test_split_philly_data(load_philly_dataset())
+        train_df.to_csv(train_path, index=False)
+        test_df.to_csv(test_path, index=False)
+    
+    return train_df, test_df

@@ -51,6 +51,9 @@ all_algos = set()
 for one_hop_filepath in tqdm(one_hop_filepaths):
     with open(os.path.join(one_hop_out_dir, one_hop_filepath), "rb") as fin:
         train_df, test_df = pickle.load(fin)
+    
+    test_df = add_missing_cols_to_test(train_df, test_df)
+
     train_df.fillna(0, inplace=True)
     test_df.fillna(0, inplace=True)
 
@@ -76,7 +79,10 @@ for one_hop_filepath in tqdm(one_hop_filepaths):
     if len(possible_granularities) == 2:
         possible_granularities.append(['EntityType', 'Tier'])
     
-    prev_granularity = one_hop_filepath.split("_")
+    prev_granularity = one_hop_filepath.split("_")[1]
+    if "+" in prev_granularity:
+        prev_granularity = prev_granularity.split("+")
+    possible_granularities = [prev_granularity, ]
     
     for granularity in possible_granularities:
 
@@ -126,13 +132,13 @@ for one_hop_filepath in tqdm(one_hop_filepaths):
                                         if dir == 'col':
                                             selected_columns = [cols_to_sample[x] for x in selected_idx]
                                             processed.append(
-                                                sub_df[scout_metadata + selected_columns]
+                                                sub_df[existing_metadatas + selected_columns]
                                             )
 
                                             # handle test data
                                             if sub_df_test is not None:
                                                 processed_test.append(
-                                                    sub_df_test[scout_metadata + selected_columns]
+                                                    sub_df_test[existing_metadatas + selected_columns]
                                                 )
                                         else:  # row sampling
                                             processed.append(sub_df.iloc[selected_idx])
@@ -184,13 +190,13 @@ for one_hop_filepath in tqdm(one_hop_filepaths):
                                         if dir == 'col':
                                             selected_columns = [cols_to_sample[x] for x in selected_idx]
                                             processed.append(
-                                                sub_df[scout_metadata + selected_columns]
+                                                sub_df[existing_metadatas + selected_columns]
                                             )
 
                                             # handle test data
                                             if sub_df_test is not None:
                                                 processed_test.append(
-                                                    sub_df_test[scout_metadata + selected_columns]
+                                                    sub_df_test[existing_metadatas + selected_columns]
                                                 )
                                         else:  # row sampling
                                             processed.append(sub_df.iloc[selected_idx])

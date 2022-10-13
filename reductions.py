@@ -5,6 +5,7 @@ Weifan Jiang, weifanjiang@g.harvard.edu
 
 import apricot
 import numpy as np
+import scipy
 import pandas as pd
 from CSSPy.volume_sampler import k_Volume_Sampling_Sampler
 from CSSPy.doublephase_sampler import double_Phase_Sampler
@@ -66,7 +67,8 @@ def subset_selection_problem(X, Y, **kwargs):
 
     d = np.shape(X)[1]
     N = np.shape(X)[0] - 1
-    _, D, V = np.linalg.svd(X)
+    # _, D, V = np.linalg.svd(X)
+    _, D, V = scipy.linalg.svd(X)
     V_k = calculate_right_eigenvectors_k_svd(X, tokeep)
 
     if kwargs['sampler'] == 'volume':

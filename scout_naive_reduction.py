@@ -125,7 +125,7 @@ for keepFrac in reduction_strengths:
 
 
 # Row aggregation
-cols_to_aggregate = [x for x in scout_raw_df if x not in scout_metadata]
+cols_to_aggregate = [x for x in scout_raw_df.columns if x not in scout_metadata]
 agg_input = scout_raw_df[['IncidentId', ] + cols_to_aggregate]
 agg_input_test = test_df[['IncidentId', ] + cols_to_aggregate]
 
