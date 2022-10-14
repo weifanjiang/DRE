@@ -530,8 +530,7 @@ metric_cols = [x for x in train_df.columns if x not in scout_metadata]
 # Sampling based: SMF FLS COL, SMF FBS COL & ROW
 # SSP not feasible yet: unable to perform SVD on too many rows
 for keepFrac in reduction_strengths:
-    # for technique in ["RowSampling", "ColSampling"]:
-    for technique in ["ColSampling"]:
+    for technique in ["RowSampling", "ColSampling"]:
         dir = technique[:3].lower()
         for model in ["fls", "fbs"]:
             if model == 'fls' and dir == 'row':
@@ -625,8 +624,7 @@ for granularity in granularities:
     # sampling based
     cols_to_sample = [x for x in train_df.columns if x not in scout_metadata]
     for keepFrac in reduction_strengths:
-        # for technique in ["RowSampling", "ColSampling"]:
-        for technique in ["ColSampling"]:
+        for technique in ["RowSampling", "ColSampling"]:
             method = "smf"
             dir = technique[:3].lower()
             for model in ["fls", "fbs"]:
@@ -673,8 +671,7 @@ for granularity in granularities:
     # row aggregation
     grb_cols = [x for x in train_df.columns if x not in scout_metadata]
     grb_cols = ['IncidentId', ] + grb_cols
-    # for option in [1, 2, 3, ]:
-    for option in [1, ]:
+    for option in [1, 2, 3, ]:
         str_desc = get_str_desc_of_reduction_function("RowAgg", granularity, dir="row", grb="IncidentId", option=option)
         print(str_desc)
 
