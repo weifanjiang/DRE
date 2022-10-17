@@ -815,6 +815,9 @@ for one_hop_filepath in one_hop_filepaths:
     if "+" in granularity:
         granularity = granularity.split("+")
     
+    grb_gran = train_df.groupby(granularity)
+    grb_gran_test = test_df.groupby(granularity)
+    
     # attempt to apply SMF column sampling, row sampling, and row aggregation as second-hop
     existing_metrics = [x for x in train_df.columns if x not in scout_metadata]
     if prev_algo != 'ColSampling':
