@@ -599,7 +599,8 @@ for keepFrac in reduction_strengths:
 
 # Row aggregation
 agg_cols = ['IncidentId', ] + [x for x in train_df.columns if x not in scout_metadata]
-for option in [1, 2, 3]:
+# for option in [1, 2, 3]:
+for option in [1, ]:
     str_desc = get_str_desc_of_reduction_function("RowAgg", None, dir="row", grb="IncidentId", option=option)
     print(str_desc)
     if not if_file_w_prefix_exists(one_hop_out_dir, str_desc):
@@ -707,7 +708,8 @@ for granularity in granularities:
     # row aggregation
     grb_cols = [x for x in train_df.columns if x not in scout_metadata]
     grb_cols = ['IncidentId', ] + grb_cols
-    for option in [1, 2, 3, ]:
+    # for option in [1, 2, 3, ]:
+    for option in [1, ]:
         str_desc = get_str_desc_of_reduction_function("RowAgg", granularity, dir="row", grb="IncidentId", option=option)
         print(str_desc)
 
@@ -995,7 +997,8 @@ for one_hop_filepath in one_hop_filepaths:
         agg_cols = [x for x in train_df.columns if x not in scout_metadata]
         agg_cols = ['IncidentId', ] + agg_cols
 
-        for option in [1, 2, 3, ]:
+        # for option in [1, 2, 3, ]:
+        for option in [1, ]:
             str_desc = get_str_desc_of_reduction_function("RowAgg", granularity, dir="row", grb="IncidentId", option=option)
             two_hop_desc = one_hop_str + "&" + str_desc
             if not if_file_w_prefix_exists(two_hop_out_dir, two_hop_desc):
@@ -1131,7 +1134,8 @@ for idx in range(2):
 
     # Row aggregation
     agg_cols = ['IncidentId', ] + [x for x in train_df.columns if x not in scout_metadata]
-    for option in [1, 2, 3]:
+    # for option in [1, 2, 3]:
+    for option in [1, ]:
         str_desc = get_str_desc_of_reduction_function("RowAgg", None, dir="row", grb="IncidentId", option=option)
         print(str_desc)
         if not if_file_w_prefix_exists(one_hop_out_dir, str_desc):
