@@ -1,6 +1,6 @@
 # %%
-dummy = True
-clear_cache = True
+dummy = False
+clear_cache = False
 
 # %%
 import apricot
@@ -640,6 +640,115 @@ for red in reduced_instances:
         scout_evaluator(os.path.join(naive_save_dir, red), out_path)
 
 # %%
+##### DIFFERENT DATASET, SAME PURPOSE #####
+# apply naive reductions to column-splitted scout dataset
+
+save_dir = scout_naive_reduction_save_dir
+
+scout_raw_df = load_raw_incident_device_health_reports(dummy=dummy)
+train_df_raw, test_df_raw = train_test_split_scout_data(scout_raw_df, 0.8)
+
+all_metric_cols = [x for x in train_df_raw.columns if x not in scout_metadata]
+sample_size = len(all_metric_cols) // 2
+metrics_0 = list(np.random.choice(all_metric_cols, size=sample_size, replace=False))
+metrics_1 = [x for x in all_metric_cols if x not in metrics_0]
+
+metrics = [metrics_0, metrics_1]
+
+for idx in range(2):
+
+    metric_cols = metrics[idx]
+    train_df = train_df_raw[scout_metadata + metric_cols]
+    test_df = test_df_raw[scout_metadata + metric_cols]
+
+    if dummy:
+        one_hop_out_dir = os.path.join(scout_data_dir, save_dir, "one_hop_metricSet{}".format(idx))
+    else:
+        one_hop_out_dir = os.path.join(scout_azure_dbfs_dir, save_dir, "one_hop_metricSet{}".format(idx))
+    os.system("mkdir -p {}".format(one_hop_out_dir))
+
+    metric_cols = [x for x in train_df.columns if x not in scout_metadata]
+
+    # Sampling based: SMF FLS COL, SMF FBS COL & ROW
+    # SSP not feasible yet: unable to perform SVD on too many rows
+    for keepFrac in reduction_strengths:
+        # for technique in ["RowSampling", "ColSampling"]:
+        for technique in ["ColSampling", ]:
+            dir = technique[:3].lower()
+            for model in ["fls", "fbs"]:
+                if model == 'fls' and dir == 'row':
+                    continue
+                else:
+                    str_desc = get_str_desc_of_reduction_function(technique, None, method="smf", dir=dir, model=model, keepFrac=keepFrac)
+                    print(str_desc)
+                    if not if_file_w_prefix_exists(one_hop_out_dir, str_desc):
+                        start_time = time.time()
+                        selected_idx = sampling_based_reduction(
+                            train_df[metric_cols].values,
+                            None,
+                            method='smf',
+                            dir=dir,
+                            model=model,
+                            keepFrac=keepFrac
+                        )
+                        end_time = time.time()
+                        time_taken = round(end_time - start_time, 5)
+                        save_file_name = os.path.join(one_hop_out_dir, "{}_sec{}.pickle".format(str_desc, time_taken))
+                        if dir == 'col':
+                            selected_columns = [metric_cols[x] for x in selected_idx]
+                            train_save = train_df[scout_metadata + selected_columns]
+                            test_save = test_df[scout_metadata + selected_columns]
+                        else:
+                            train_save = train_df.iloc[selected_idx]
+                            test_save = test_df
+                        with open(save_file_name, "wb") as fout:
+                            pickle.dump((train_save, test_save), fout)
+
+
+    # Row aggregation
+    agg_cols = ['IncidentId', ] + [x for x in train_df.columns if x not in scout_metadata]
+    # for option in [1, 2, 3]:
+    for option in [1, ]:
+        str_desc = get_str_desc_of_reduction_function("RowAgg", None, dir="row", grb="IncidentId", option=option)
+        print(str_desc)
+        if not if_file_w_prefix_exists(one_hop_out_dir, str_desc):
+            start_time = time.time()
+            train_agg_result = aggregation_based_reduction(train_df[agg_cols], dir='row', grb='IncidentId', option=option)
+            end_time = time.time()
+            time_taken = round(end_time - start_time, 5)
+            test_agg_result = aggregation_based_reduction(test_df[agg_cols], dir='row', grb='IncidentId', option=option)
+        
+            renamed_dfs = list()
+            for df in [train_agg_result, test_agg_result]:
+                rename_cols = [":".join(x) for x in df.columns]
+                df.columns = rename_cols
+                df.reset_index(inplace=True)
+                renamed_dfs.append(df)
+            
+            train_save, test_save = renamed_dfs
+            save_file_name = os.path.join(one_hop_out_dir, "{}_sec{}.pickle".format(str_desc, time_taken))
+            with open(save_file_name, "wb") as fout:
+                pickle.dump((train_save, test_save), fout)
+
+# %%
+##### EVALUATE DIFFERENT DATASET, SAME PURPOSE #####
+for idx in range(2):
+    if dummy:
+        naive_save_dir = os.path.join(scout_data_dir, scout_naive_reduction_save_dir, "one_hop_metricSet{}".format(idx))
+        eval_dir = os.path.join(scout_dummy_automl_eval_dir, "metricSet{}".format(idx))
+    else:
+        naive_save_dir = os.path.join(scout_azure_dbfs_dir, scout_naive_reduction_save_dir, "one_hop_metricSet{}".format(idx))
+        eval_dir = os.path.join(scout_dbfs_automl_eval_dir, "metricSet{}".format(idx))
+    os.system("mkdir -p {}".format(eval_dir))
+
+    reduced_instances = [x for x in os.listdir(naive_save_dir) if x.endswith(".pickle")]
+    for red in reduced_instances:
+        out_path = os.path.join(eval_dir, red.replace("pickle", "json"))
+        print(out_path)
+        if not os.path.isfile(out_path):
+            scout_evaluator(os.path.join(naive_save_dir, red), out_path)
+
+# %%
 ##### SCOUT GRAMMAR GUIDED ONE-HOP REDUCTION #####
 save_dir = scout_guided_reduction_save_dir
 scout_raw_df = load_raw_incident_device_health_reports(dummy=dummy)
@@ -835,7 +944,7 @@ for one_hop_filepath in one_hop_filepaths:
                         selected_idx = sampling_based_reduction(
                             sub_df[existing_metrics].values,
                             None,
-                            method=method,
+                            method='smf',
                             dir='col',
                             model=model,
                             keepFrac=keepFrac
@@ -923,7 +1032,7 @@ for one_hop_filepath in one_hop_filepaths:
             if prev_algo == 'RowAgg':
                 for method in ["smf", "ssp"]:
                     if method == "smf":
-                        str_desc = get_str_desc_of_reduction_function( "RowSampling", granularity, method=method, dir=dir, model='fls', keepFrac=keepFrac)
+                        str_desc = get_str_desc_of_reduction_function( "RowSampling", granularity, method=method, dir='row', model='fls', keepFrac=keepFrac)
                         two_hop_desc = one_hop_str + "&" + str_desc
                         if not if_file_w_prefix_exists(two_hop_out_dir, two_hop_desc):
                             processed = list()
@@ -1069,114 +1178,6 @@ for red in reduced_instances:
     print(out_path)
     if not os.path.isfile(out_path):
         scout_evaluator(os.path.join(guided_two_hop_save_dir, red), out_path)
-
-# %%
-##### DIFFERENT DATASET, SAME PURPOSE #####
-# apply naive reductions to column-splitted scout dataset
-
-save_dir = scout_naive_reduction_save_dir
-
-scout_raw_df = load_raw_incident_device_health_reports(dummy=dummy)
-train_df_raw, test_df_raw = train_test_split_scout_data(scout_raw_df, 0.8)
-
-all_metric_cols = [x for x in train_df_raw.columns if x not in scout_metadata]
-sample_size = len(all_metric_cols) // 2
-metrics_0 = list(np.random.choice(all_metric_cols, size=sample_size, replace=False))
-metrics_1 = [x for x in all_metric_cols if x not in metrics_0]
-
-metrics = [metrics_0, metrics_1]
-
-for idx in range(2):
-
-    metric_cols = metrics[idx]
-    train_df = train_df_raw[scout_metadata + metric_cols]
-    test_df = test_df_raw[scout_metadata + metric_cols]
-
-    if dummy:
-        one_hop_out_dir = os.path.join(scout_data_dir, save_dir, "one_hop_metricSet{}".format(idx))
-    else:
-        one_hop_out_dir = os.path.join(scout_azure_dbfs_dir, save_dir, "one_hop_metricSet{}".format(idx))
-    os.system("mkdir -p {}".format(one_hop_out_dir))
-
-    metric_cols = [x for x in train_df.columns if x not in scout_metadata]
-
-    # Sampling based: SMF FLS COL, SMF FBS COL & ROW
-    # SSP not feasible yet: unable to perform SVD on too many rows
-    for keepFrac in reduction_strengths:
-        for technique in ["RowSampling", "ColSampling"]:
-            dir = technique[:3].lower()
-            for model in ["fls", "fbs"]:
-                if model == 'fls' and dir == 'row':
-                    continue
-                else:
-                    str_desc = get_str_desc_of_reduction_function(technique, None, method="smf", dir=dir, model=model, keepFrac=keepFrac)
-                    print(str_desc)
-                    if not if_file_w_prefix_exists(one_hop_out_dir, str_desc):
-                        start_time = time.time()
-                        selected_idx = sampling_based_reduction(
-                            train_df[metric_cols].values,
-                            None,
-                            method='smf',
-                            dir=dir,
-                            model=model,
-                            keepFrac=keepFrac
-                        )
-                        end_time = time.time()
-                        time_taken = round(end_time - start_time, 5)
-                        save_file_name = os.path.join(one_hop_out_dir, "{}_sec{}.pickle".format(str_desc, time_taken))
-                        if dir == 'col':
-                            selected_columns = [metric_cols[x] for x in selected_idx]
-                            train_save = train_df[scout_metadata + selected_columns]
-                            test_save = test_df[scout_metadata + selected_columns]
-                        else:
-                            train_save = train_df.iloc[selected_idx]
-                            test_save = test_df
-                        with open(save_file_name, "wb") as fout:
-                            pickle.dump((train_save, test_save), fout)
-
-
-    # Row aggregation
-    agg_cols = ['IncidentId', ] + [x for x in train_df.columns if x not in scout_metadata]
-    # for option in [1, 2, 3]:
-    for option in [1, ]:
-        str_desc = get_str_desc_of_reduction_function("RowAgg", None, dir="row", grb="IncidentId", option=option)
-        print(str_desc)
-        if not if_file_w_prefix_exists(one_hop_out_dir, str_desc):
-            start_time = time.time()
-            train_agg_result = aggregation_based_reduction(train_df[agg_cols], dir='row', grb='IncidentId', option=option)
-            end_time = time.time()
-            time_taken = round(end_time - start_time, 5)
-            test_agg_result = aggregation_based_reduction(test_df[agg_cols], dir='row', grb='IncidentId', option=option)
-        
-            renamed_dfs = list()
-            for df in [train_agg_result, test_agg_result]:
-                rename_cols = [":".join(x) for x in df.columns]
-                df.columns = rename_cols
-                df.reset_index(inplace=True)
-                renamed_dfs.append(df)
-            
-            train_save, test_save = renamed_dfs
-            save_file_name = os.path.join(one_hop_out_dir, "{}_sec{}.pickle".format(str_desc, time_taken))
-            with open(save_file_name, "wb") as fout:
-                pickle.dump((train_save, test_save), fout)
-
-# %%
-##### EVALUATE DIFFERENT DATASET, SAME PURPOSE #####
-for idx in range(2):
-    if dummy:
-        naive_save_dir = os.path.join(scout_data_dir, scout_naive_reduction_save_dir, "one_hop_metricSet{}".format(idx))
-        eval_dir = os.path.join(scout_dummy_automl_eval_dir, "metricSet{}".format(idx))
-    else:
-        naive_save_dir = os.path.join(scout_azure_dbfs_dir, scout_naive_reduction_save_dir, "one_hop_metricSet{}".format(idx))
-        eval_dir = os.path.join(scout_dbfs_automl_eval_dir, "metricSet{}".format(idx))
-    os.system("mkdir -p {}".format(eval_dir))
-
-    reduced_instances = [x for x in os.listdir(naive_save_dir) if x.endswith(".pickle")]
-    for red in reduced_instances:
-        out_path = os.path.join(eval_dir, red.replace("pickle", "json"))
-        print(out_path)
-        if not os.path.isfile(out_path):
-            scout_evaluator(os.path.join(naive_save_dir, red), out_path)
 
 # %%
 ##### SAME DATASET, DIFFERENT PURPOSE #####
