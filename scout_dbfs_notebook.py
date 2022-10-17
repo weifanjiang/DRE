@@ -1,5 +1,6 @@
 # %%
 dummy = True
+clear_cache = True
 
 # %%
 import apricot
@@ -250,7 +251,7 @@ if os.path.isdir(scout_data_dir):
 if os.path.isdir(scout_azure_dbfs_dir):
     os.system("mkdir -p {}".format(scout_dbfs_automl_eval_dir))
 
-scout_automl_time = 300
+scout_automl_time = 180
 scout_automl_mem = 30000
 
 scout_entity_types = ['cluster_switch', 'switch', 'tor_switch', ]
@@ -269,7 +270,7 @@ np.random.seed(10)
 def load_raw_incident_device_health_reports(dummy=False):
     if dummy:
         source_dir = scout_dummy_device_health_dir
-        ret_df = pd.read_csv("data/scout/scout_anonymized_raw_data_compressed.gz")
+        ret_df = pd.read_csv("data/scout/scout_anonymized_raw_data_compressed.gz", index_col=0)
         ret_df[[x for x in ret_df.columns if x not in scout_metadata]] = np.absolute(ret_df[[x for x in ret_df.columns if x not in scout_metadata]].values)
         return ret_df
     else:
@@ -375,6 +376,34 @@ def scout_load_labels(df_list, dummy=False):
 
     return extracted_labels
 
+
+def convert_severity_level_to_label(severity):
+    severity = int(severity)
+    if severity <= 3:
+        return 0
+    else:
+        return 1
+
+
+def scout_load_severity(df_list, dummy=False):
+    if dummy:
+        return None
+    else:
+        severity_fpath = os.path.join(scout_azure_dbfs_dir, "incident_severity.csv")
+        label_df = pd.read_csv(severity_fpath)
+        label_df['Label'] = label_df.apply(lambda row: convert_severity_level_to_label(row['severity'], axis=1))
+    
+    label_dict = dict()
+    for _, row in label_df.iterrows():
+        label_dict[row["IncidentId"]] = int(row["Label"])
+    
+    extracted_labels = list()
+    for df in df_list:
+        extracted_labels.append(np.array([label_dict.get(x, -1) for x in df.IncidentId.values]))
+
+    return extracted_labels
+
+
 def add_missing_cols_to_test(train_df, test_df):
     missing_cols = [x for x in train_df.columns if x not in test_df.columns]
     for missing_col in missing_cols:
@@ -383,15 +412,17 @@ def add_missing_cols_to_test(train_df, test_df):
     return test_df
 
 # %%
-def scout_evaluator(scout_savepath, output_save_path=None):
-
-    start_time = time.time()
+def scout_evaluator(scout_savepath, output_save_path=None, objective='incidentRouting'):
 
     with open(scout_savepath, "rb") as fin:
         train_df, test_df = pickle.load(fin)
+
+    start_time = time.time()
     
-    num_row, num_col = int(train_df.shape[0]), int(train_df.shape[1])
-    num_null = int(train_df.isna().values.sum())
+    val_cols = [x for x in train_df.columns if x not in scout_metadata]
+    
+    num_row, num_col = int(train_df[val_cols].shape[0]), int(train_df[val_cols].shape[1])
+    num_null = int(train_df[val_cols].isna().values.sum())
     
     test_df = add_missing_cols_to_test(train_df, test_df)
 
@@ -464,7 +495,11 @@ def scout_evaluator(scout_savepath, output_save_path=None):
         train_data_vectors = vectorized_df[vectorized_df.IncidentId.isin(train_incident_ids)]
         test_data_vectors = vectorized_df[vectorized_df.IncidentId.isin(test_incident_ids)]
     
-    train_label, test_label = scout_load_labels([train_data_vectors, test_data_vectors], dummy=dummy)
+    if objective == 'incidentRouting':
+        train_label, test_label = scout_load_labels([train_data_vectors, test_data_vectors], dummy=dummy)
+    elif objective == 'severityPrediction':
+        train_label, test_label = scout_load_severity([train_data_vectors, test_data_vectors], dummy=dummy)
+
     pred_columns = [x for x in train_data_vectors.columns if x not in scout_metadata]
 
     # train AutoML evaluator with fixed budget
@@ -505,8 +540,7 @@ def scout_evaluator(scout_savepath, output_save_path=None):
 
 # %%
 ##### CLEAR CACHES #####
-clear_cache = input('type \"yes\" to clear cache:')
-if clear_cache == 'yes':
+if clear_cache:
     os.system('rm -rf {}'.format(scout_automl_evaluate_dir))
     os.system('rm -rf {}'.format(os.path.join(scout_azure_dbfs_dir, scout_naive_reduction_save_dir)))
     os.system('rm -rf {}'.format(os.path.join(scout_azure_dbfs_dir, scout_guided_reduction_save_dir)))
@@ -530,7 +564,8 @@ metric_cols = [x for x in train_df.columns if x not in scout_metadata]
 # Sampling based: SMF FLS COL, SMF FBS COL & ROW
 # SSP not feasible yet: unable to perform SVD on too many rows
 for keepFrac in reduction_strengths:
-    for technique in ["RowSampling", "ColSampling"]:
+    # for technique in ["RowSampling", "ColSampling"]:
+    for technique in ["ColSampling", ]:
         dir = technique[:3].lower()
         for model in ["fls", "fbs"]:
             if model == 'fls' and dir == 'row':
@@ -624,7 +659,8 @@ for granularity in granularities:
     # sampling based
     cols_to_sample = [x for x in train_df.columns if x not in scout_metadata]
     for keepFrac in reduction_strengths:
-        for technique in ["RowSampling", "ColSampling"]:
+        # for technique in ["RowSampling", "ColSampling"]:
+        for technique in ["ColSampling", ]:
             method = "smf"
             dir = technique[:3].lower()
             for model in ["fls", "fbs"]:
@@ -848,34 +884,35 @@ for one_hop_filepath in one_hop_filepaths:
     if prev_algo != 'RowSampling':
         for keepFrac in reduction_strengths:
             # SMF FBS ROW sampling for all cases
-            str_desc = get_str_desc_of_reduction_function('RowSampling', granularity, method='smf', dir='row', model='fbs', keepFrac=keepFrac)
-            two_hop_desc = one_hop_str + "&" + str_desc
-            print(two_hop_desc)
-            if not if_file_w_prefix_exists(two_hop_out_dir, two_hop_desc):
-                processed, processed_test = list(), list()
-                time_taken = 0
-                for key, sub_df in grb_gran:
-                    start_time = time.time()
-                    selected_idx = sampling_based_reduction(
-                        sub_df[existing_metrics].values,
-                        None,
-                        method='smf',
-                        dir='row',
-                        model='fbs',
-                        keepFrac=keepFrac
-                    )
-                    end_time = time.time()
-                    time_taken += end_time - start_time
-                    sub_df_test = safe_get_subgroup(grb_gran_test, key)
-                    processed.append(sub_df.iloc[selected_idx])
-                    if sub_df_test is not None:
-                        processed_test.append(sub_df_test)
-                time_taken = round(time_taken, 5)
-                save_file_name = os.path.join(two_hop_out_dir, "{}_sec{}.pickle".format(two_hop_desc, time_taken))
-                to_save = pd.concat(processed, axis=0, ignore_index=True)
-                to_save_test = pd.concat(processed_test, axis=0, ignore_index=True)
-                with open(save_file_name, "wb") as fout:
-                    pickle.dump((to_save, to_save_test), fout)
+            if prev_algo == 'RowAgg':
+                str_desc = get_str_desc_of_reduction_function('RowSampling', granularity, method='smf', dir='row', model='fbs', keepFrac=keepFrac)
+                two_hop_desc = one_hop_str + "&" + str_desc
+                print(two_hop_desc)
+                if not if_file_w_prefix_exists(two_hop_out_dir, two_hop_desc):
+                    processed, processed_test = list(), list()
+                    time_taken = 0
+                    for key, sub_df in grb_gran:
+                        start_time = time.time()
+                        selected_idx = sampling_based_reduction(
+                            sub_df[existing_metrics].values,
+                            None,
+                            method='smf',
+                            dir='row',
+                            model='fbs',
+                            keepFrac=keepFrac
+                        )
+                        end_time = time.time()
+                        time_taken += end_time - start_time
+                        sub_df_test = safe_get_subgroup(grb_gran_test, key)
+                        processed.append(sub_df.iloc[selected_idx])
+                        if sub_df_test is not None:
+                            processed_test.append(sub_df_test)
+                    time_taken = round(time_taken, 5)
+                    save_file_name = os.path.join(two_hop_out_dir, "{}_sec{}.pickle".format(two_hop_desc, time_taken))
+                    to_save = pd.concat(processed, axis=0, ignore_index=True)
+                    to_save_test = pd.concat(processed_test, axis=0, ignore_index=True)
+                    with open(save_file_name, "wb") as fout:
+                        pickle.dump((to_save, to_save_test), fout)
 
             # SMF FLS, SSP only if aggregation is previously applied
             if prev_algo == 'RowAgg':
@@ -1026,5 +1063,130 @@ for red in reduced_instances:
     print(out_path)
     if not os.path.isfile(out_path):
         scout_evaluator(os.path.join(guided_two_hop_save_dir, red), out_path)
+
+# %%
+##### DIFFERENT DATASET, SAME PURPOSE #####
+# apply naive reductions to column-splitted scout dataset
+
+save_dir = scout_naive_reduction_save_dir
+
+scout_raw_df = load_raw_incident_device_health_reports(dummy=dummy)
+train_df_raw, test_df_raw = train_test_split_scout_data(scout_raw_df, 0.8)
+
+all_metric_cols = [x for x in train_df_raw.columns if x not in scout_metadata]
+sample_size = len(all_metric_cols) // 2
+metrics_0 = list(np.random.choice(all_metric_cols, size=sample_size, replace=False))
+metrics_1 = [x for x in all_metric_cols if x not in metrics_0]
+
+metrics = [metrics_0, metrics_1]
+
+for idx in range(2):
+
+    metric_cols = metrics[idx]
+    train_df = train_df_raw[scout_metadata + metric_cols]
+    test_df = test_df_raw[scout_metadata + metric_cols]
+
+    if dummy:
+        one_hop_out_dir = os.path.join(scout_data_dir, save_dir, "one_hop_metricSet{}".format(idx))
+    else:
+        one_hop_out_dir = os.path.join(scout_azure_dbfs_dir, save_dir, "one_hop_metricSet{}".format(idx))
+    os.system("mkdir -p {}".format(one_hop_out_dir))
+
+    metric_cols = [x for x in train_df.columns if x not in scout_metadata]
+
+    # Sampling based: SMF FLS COL, SMF FBS COL & ROW
+    # SSP not feasible yet: unable to perform SVD on too many rows
+    for keepFrac in reduction_strengths:
+        for technique in ["RowSampling", "ColSampling"]:
+            dir = technique[:3].lower()
+            for model in ["fls", "fbs"]:
+                if model == 'fls' and dir == 'row':
+                    continue
+                else:
+                    str_desc = get_str_desc_of_reduction_function(technique, None, method="smf", dir=dir, model=model, keepFrac=keepFrac)
+                    print(str_desc)
+                    if not if_file_w_prefix_exists(one_hop_out_dir, str_desc):
+                        start_time = time.time()
+                        selected_idx = sampling_based_reduction(
+                            train_df[metric_cols].values,
+                            None,
+                            method='smf',
+                            dir=dir,
+                            model=model,
+                            keepFrac=keepFrac
+                        )
+                        end_time = time.time()
+                        time_taken = round(end_time - start_time, 5)
+                        save_file_name = os.path.join(one_hop_out_dir, "{}_sec{}.pickle".format(str_desc, time_taken))
+                        if dir == 'col':
+                            selected_columns = [metric_cols[x] for x in selected_idx]
+                            train_save = train_df[scout_metadata + selected_columns]
+                            test_save = test_df[scout_metadata + selected_columns]
+                        else:
+                            train_save = train_df.iloc[selected_idx]
+                            test_save = test_df
+                        with open(save_file_name, "wb") as fout:
+                            pickle.dump((train_save, test_save), fout)
+
+
+    # Row aggregation
+    agg_cols = ['IncidentId', ] + [x for x in train_df.columns if x not in scout_metadata]
+    for option in [1, 2, 3]:
+        str_desc = get_str_desc_of_reduction_function("RowAgg", None, dir="row", grb="IncidentId", option=option)
+        print(str_desc)
+        if not if_file_w_prefix_exists(one_hop_out_dir, str_desc):
+            start_time = time.time()
+            train_agg_result = aggregation_based_reduction(train_df[agg_cols], dir='row', grb='IncidentId', option=option)
+            end_time = time.time()
+            time_taken = round(end_time - start_time, 5)
+            test_agg_result = aggregation_based_reduction(test_df[agg_cols], dir='row', grb='IncidentId', option=option)
+        
+            renamed_dfs = list()
+            for df in [train_agg_result, test_agg_result]:
+                rename_cols = [":".join(x) for x in df.columns]
+                df.columns = rename_cols
+                df.reset_index(inplace=True)
+                renamed_dfs.append(df)
+            
+            train_save, test_save = renamed_dfs
+            save_file_name = os.path.join(one_hop_out_dir, "{}_sec{}.pickle".format(str_desc, time_taken))
+            with open(save_file_name, "wb") as fout:
+                pickle.dump((train_save, test_save), fout)
+
+# %%
+##### EVALUATE DIFFERENT DATASET, SAME PURPOSE #####
+for idx in range(2):
+    if dummy:
+        naive_save_dir = os.path.join(scout_data_dir, scout_naive_reduction_save_dir, "one_hop_metricSet{}".format(idx))
+        eval_dir = os.path.join(scout_dummy_automl_eval_dir, "metricSet{}".format(idx))
+    else:
+        naive_save_dir = os.path.join(scout_azure_dbfs_dir, scout_naive_reduction_save_dir, "one_hop_metricSet{}".format(idx))
+        eval_dir = os.path.join(scout_dbfs_automl_eval_dir, "metricSet{}".format(idx))
+    os.system("mkdir -p {}".format(eval_dir))
+
+    reduced_instances = [x for x in os.listdir(naive_save_dir) if x.endswith(".pickle")]
+    for red in reduced_instances:
+        out_path = os.path.join(eval_dir, red.replace("pickle", "json"))
+        print(out_path)
+        if not os.path.isfile(out_path):
+            scout_evaluator(os.path.join(naive_save_dir, red), out_path)
+
+# %%
+##### SAME DATASET, DIFFERENT PURPOSE #####
+# evaluate scout naive reduction for severity prediction
+if dummy:
+    naive_save_dir = os.path.join(scout_data_dir, scout_naive_reduction_save_dir, "one_hop")
+    eval_dir = os.path.join(scout_dummy_automl_eval_dir, 'one_hop_sp')
+else:
+    naive_save_dir = os.path.join(scout_azure_dbfs_dir, scout_naive_reduction_save_dir, "one_hop")
+    eval_dir = os.path.join(scout_dbfs_automl_eval_dir, 'one_hop_sp')
+os.system("mkdir -p {}".format(eval_dir))
+
+reduced_instances = [x for x in os.listdir(naive_save_dir) if x.endswith(".pickle")]
+for red in reduced_instances:
+    out_path = os.path.join(eval_dir, red.replace("pickle", "json"))
+    print(out_path)
+    if not os.path.isfile(out_path):
+        scout_evaluator(os.path.join(naive_save_dir, red), out_path, objective='severityPrediction')
 
 
