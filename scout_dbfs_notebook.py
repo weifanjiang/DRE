@@ -935,8 +935,8 @@ for one_hop_filepath in one_hop_filepaths:
                                     sub_df[existing_metrics].values,
                                     None,
                                     method=method,
-                                    dir=dir,
-                                    model=model,
+                                    dir='row',
+                                    model='fls',
                                     keepFrac=keepFrac
                                 )
                                 end_time = time.time()
