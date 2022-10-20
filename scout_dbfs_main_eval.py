@@ -847,6 +847,11 @@ for name in ['greedy', 'baseline', 'baseline2']:
         os.path.join(save_dir, "{}.pickle".format(name)),
         granularity=gran
     )
+    X_train = X_train[Y_train != -1, :]
+    Y_train = Y_train[Y_train != -1]
+    X_test = X_test[Y_test != -1, :]
+    Y_test = Y_test[Y_test != -1]
+    print(X_train.shape, Y_train.shape, X_test.shape, Y_test.shape)
     out_dir = os.path.join(save_dir, name)
     os.system("mkdir -p {}".format(out_dir))
     train_and_evaluate_all_models(X_train, Y_train, X_test, Y_test, out_dir)
