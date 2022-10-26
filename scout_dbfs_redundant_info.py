@@ -1,5 +1,5 @@
 # %%
-dummy = True
+dummy = False
 
 # %%
 import apricot
@@ -556,7 +556,8 @@ else:
     save_dir = os.path.join(scout_azure_dbfs_dir, 'redundant')
 os.system('mkdir -p {}'.format(save_dir))
 
-for location in ['high', 'low']:
+# for location in ['high', 'low', 'all']:
+for location in ['all']:
 
     if not os.path.isfile(os.path.join(save_dir, "{}_data.pickle".format(location))):
         print('generating feature vectors from {} tier entities'.format(location))
@@ -565,6 +566,8 @@ for location in ['high', 'low']:
             tiers = ['t0', 't1']
         elif location == 'low':
             tiers = ['t2', 't3']
+        else:
+            tiers = ['t0', 't1', 't2', 't3']
         
         train_part = train_df[train_df.Tier.isin(tiers)]
         test_part = test_df[test_df.Tier.isin(tiers)]
@@ -577,8 +580,9 @@ for location in ['high', 'low']:
             pickle.dump((train_vals, train_label, test_vals, test_label), fout)
 
 # %%
-automl_times = [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
-for location in ['high', 'low']:
+automl_times = [100, 200, 300, 400, 500, 600,]
+# for location in ['high', 'low', 'all']:
+for location in ['all']:
     with open(os.path.join(save_dir, "{}_data.pickle".format(location)), "rb") as fin:
         X_train, Y_train, X_test, Y_test = pickle.load(fin)
     
