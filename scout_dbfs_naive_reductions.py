@@ -565,7 +565,8 @@ agg_cols = ['IncidentId', ] + [x for x in train_df.columns if x not in scout_met
 # for option in [1, 2, 3]:
 for option in [1, ]:
     str_desc = get_str_desc_of_reduction_function("RowAgg", None, dir="row", grb="IncidentId", option=option)
-    if not if_file_w_prefix_exists(one_hop_out_dir, str_desc):
+    th_desc = best_one_hop + "&" + str_desc
+    if not if_file_w_prefix_exists(two_hop_out_dir, th_desc):
         start_time = time.time()
         train_agg_result = aggregation_based_reduction(train_df[agg_cols], dir='row', grb='IncidentId', option=option)
         end_time = time.time()
@@ -579,7 +580,7 @@ for option in [1, ]:
             renamed_dfs.append(df)
         
         train_save, test_save = renamed_dfs
-        save_file_name = os.path.join(two_hop_out_dir, "{}_sec{}.pickle".format(str_desc, time_taken))
+        save_file_name = os.path.join(two_hop_out_dir, "{}_sec{}.pickle".format(th_desc, time_taken))
         with open(save_file_name, "wb") as fout:
             pickle.dump((train_save, test_save), fout)
 
@@ -598,72 +599,6 @@ def scout_convert_to_feature_vector_max(scout_savepath, granularity=None, object
 
     train_df.fillna(0, inplace=True)
     test_df.fillna(0, inplace=True)
-    
-    # check if Row Aggregation is applied
-    if granularity is None:
-        # not applied, apply row aggregation
-        # with ['EntityType', 'Tier'] granularity
-        # and 3 as aggregation function option
-
-        granularity = ['EntityType', 'Tier']
-        grb_cols = ['IncidentId', ] + [x for x in train_df.columns if x not in scout_metadata]
-        processed, processed_test = list(), list()
-        grb_gran = train_df.groupby(granularity)
-        grb_gran_test = test_df.groupby(granularity)
-    
-        for keys, sub_df in grb_gran:
-            aggregated_result = aggregation_based_reduction(sub_df[grb_cols], dir="row", grb='IncidentId', option=3)
-
-            rename_col = list()
-            for old_col in aggregated_result.columns:
-                rename_col.append(":".join(old_col))
-            
-            aggregated_result.columns = rename_col
-            aggregated_result.reset_index(inplace=True)
-
-            if type(granularity) != str:
-                for gran_name, gran_val in zip(granularity, keys):
-                    aggregated_result[gran_name] = gran_val
-            else:
-                aggregated_result[granularity] = keys
-
-            processed.append(aggregated_result)
-
-            sub_df_test = safe_get_subgroup(grb_gran_test, keys)
-            if sub_df_test is not None:
-                aggregated_result_test = aggregation_based_reduction(
-                    sub_df_test[grb_cols], dir="row", grb='IncidentId', option=3
-                )
-                rename_col_test = list()
-                for old_col in aggregated_result_test.columns:
-                    rename_col_test.append(":".join(old_col))
-                aggregated_result_test.columns = rename_col
-                aggregated_result_test.reset_index(inplace=True)
-
-                if type(granularity) != str:
-                    for gran_name, gran_val in zip(granularity, keys):
-                        aggregated_result_test[gran_name] = gran_val
-                else:
-                    aggregated_result_test[granularity] = keys
-                
-                processed_test.append(aggregated_result_test)
-
-        to_save = pd.concat(processed, axis=0, ignore_index=True)
-        to_save_test = pd.concat(processed_test, axis=0, ignore_index=True)
-
-        # reorganize columns
-        metadata_left = [x for x in scout_metadata if x in granularity]
-        metrics_left = [x for x in to_save.columns if x not in scout_metadata]
-        out_columns = ['IncidentId', ] + metadata_left + metrics_left
-
-        time_taken = round(time_taken, 5)
-        to_save, to_save_test = to_save[out_columns], to_save_test[out_columns]
-        
-        train_df, test_df = to_save, to_save_test
-    
-    else:
-        # applied
-        metadata_gran = granularity
     
     metadata_gran = granularity
 
@@ -822,8 +757,8 @@ if dummy:
     mle_dir = os.path.join(scout_data_dir, 'ml_exploration')
 else:
     mle_dir = os.path.join(scout_azure_dbfs_dir, 'ml_exploration')
-os.system('mkdir -p {}'.format(save_dir))
-os.system('cp {} {}'.format(os.path.join(two_hop_out_dir, naive_search_result)), os.path.join(mle_dir, "naive.pickle"))
+os.system('mkdir -p {}'.format(mle_dir))
+os.system('cp \"{}\" {}'.format(os.path.join(two_hop_out_dir, naive_search_result), os.path.join(mle_dir, "naive.pickle")))
 
 for name in ['naive']:
     if name == 'greedy':
@@ -831,11 +766,11 @@ for name in ['naive']:
     elif name == 'baseline':
         gran = 'EntityType'
     elif name == 'naive':
-        gran = 'None'
+        gran = None
     else:
         gran = ['EntityType', 'Tier']
     X_train, Y_train, X_test, Y_test = scout_convert_to_feature_vector_max(
-        os.path.join(save_dir, "{}.pickle".format(name)),
+        os.path.join(mle_dir, "{}.pickle".format(name)),
         granularity=gran
     )
     X_train = X_train[Y_train != -1, :]
@@ -843,7 +778,7 @@ for name in ['naive']:
     X_test = X_test[Y_test != -1, :]
     Y_test = Y_test[Y_test != -1]
     print(X_train.shape, Y_train.shape, X_test.shape, Y_test.shape)
-    out_dir = os.path.join(save_dir, name)
+    out_dir = os.path.join(mle_dir, name)
     os.system("mkdir -p {}".format(out_dir))
     train_and_evaluate_all_models(X_train, Y_train, X_test, Y_test, out_dir)
 
